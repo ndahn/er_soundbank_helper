@@ -248,9 +248,9 @@ def main(
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
-        src_bnk = SRC_BNK_DIR
-        dst_bnk = DST_BNK_DIR
-        sound_ids = WWISE_IDS
+        src_bnk_dir = SRC_BNK_DIR
+        dst_bnk_dir = DST_BNK_DIR
+        wwise_ids = WWISE_IDS
         enable_write = ENABLE_WRITE
     else:
         import argparse
@@ -268,13 +268,13 @@ if __name__ == "__main__":
             parser.print_help()
             sys.exit(1)
 
-        src_bnk = args.src_bnk
-        dst_bnk = args.dst_bnk
-        sound_ids = args.sound_ids
+        src_bnk_dir = args.src_bnk
+        dst_bnk_dir = args.dst_bnk
+        wwise_ids = args.sound_ids
         enable_write = not args.disable_write
 
     try:
-        main(src_bnk, dst_bnk, sound_ids, enable_write)
+        main(src_bnk_dir, dst_bnk_dir, wwise_ids, enable_write)
     except Exception as e:
         if hasattr(sys, "gettrace") and sys.gettrace() is not None:
             # Debugger is active, let the debugger handle it
