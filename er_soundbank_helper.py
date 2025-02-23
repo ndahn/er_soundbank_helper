@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-from types import MappingProxyType
 import traceback
 from pathlib import Path
 import shutil
@@ -13,12 +12,12 @@ DST_BNK_JSON = "cs_main"
 SOUND_IDS = [
     477008001,
 ]
-ENABLE_WRITE = True
+ENABLE_WRITE = False
 
 
 def load_indices(
     bnk: dict,
-) -> tuple[list[dict], MappingProxyType[int, int], MappingProxyType[str, int]]:
+) -> tuple[list[dict], dict[int, int], dict[str, int]]:
     sections = bnk.get("sections", None)
 
     if not sections:
@@ -44,8 +43,7 @@ def load_indices(
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
-    # MappingProxyType is our immutable dict
-    return hirc, MappingProxyType(objects), MappingProxyType(events)
+    return hirc, objects, events
 
 
 def main(
@@ -203,6 +201,12 @@ def main(
                         break
 
             dst_hirc.insert(transfer_idx, obj)
+            
+            # Since we have inserted something, all subsequent indices will be offset
+            for oid, idx in dst_oid_to_idx.items():
+                if idx >= transfer_idx:
+                    dst_oid_to_idx[oid] = idx + 1
+
             transfer_idx += 1
 
         # Add the inserted hierarchy to the ActorMixer in the destination
