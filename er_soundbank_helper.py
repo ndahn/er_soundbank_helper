@@ -7,9 +7,9 @@ import json
 from pprint import pprint
 
 
-SRC_BNK_JSON = "cs_c4770"
-DST_BNK_JSON = "cs_main"
-SOUND_IDS = [
+SRC_BNK_DIR = "cs_c4770"
+DST_BNK_DIR = "cs_main"
+WWISE_IDS = [
     477008001,
 ]
 ENABLE_WRITE = False
@@ -248,9 +248,9 @@ def main(
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
-        src_bnk = SRC_BNK_JSON
-        dst_bnk = DST_BNK_JSON
-        sound_ids = SOUND_IDS
+        src_bnk = SRC_BNK_DIR
+        dst_bnk = DST_BNK_DIR
+        sound_ids = WWISE_IDS
         enable_write = ENABLE_WRITE
     else:
         import argparse
