@@ -47,30 +47,30 @@ def load_indices(
 
 
 def main(
-    src_bnk_path: str,
-    dst_bnk_path: str,
-    sound_ids: list[int],
+    src_bnk_dir: str,
+    dst_bnk_dir: str,
+    wwise_ids: list[int],
     enable_write: bool = True,
 ):
-    src_bnk_path: Path = Path(src_bnk_path)
-    dst_bnk_path: Path = Path(dst_bnk_path)
+    src_bnk_dir: Path = Path(src_bnk_dir)
+    dst_bnk_dir: Path = Path(dst_bnk_dir)
 
-    if not src_bnk_path.is_absolute():
-        src_bnk_path = Path(__file__).resolve().parent / src_bnk_path
+    if not src_bnk_dir.is_absolute():
+        src_bnk_dir = Path(__file__).resolve().parent / src_bnk_dir
 
-    if not dst_bnk_path.is_absolute():
-        dst_bnk_path = Path(__file__).resolve().parent / dst_bnk_path
+    if not dst_bnk_dir.is_absolute():
+        dst_bnk_dir = Path(__file__).resolve().parent / dst_bnk_dir
 
-    src_bnk_path = src_bnk_path.resolve()
-    dst_bnk_path = dst_bnk_path.resolve()
+    src_bnk_dir = src_bnk_dir.resolve()
+    dst_bnk_dir = dst_bnk_dir.resolve()
 
     print("Loading source soundbank")
-    src_json = src_bnk_path / "soundbank.json"
+    src_json = src_bnk_dir / "soundbank.json"
     with src_json.open() as f:
         src_bnk: dict = json.load(f)
 
     print("Loading destination soundbank")
-    dst_json = dst_bnk_path / "soundbank.json"
+    dst_json = dst_bnk_dir / "soundbank.json"
     with dst_json.open() as f:
         dst_bnk: dict = json.load(f)
 
@@ -79,17 +79,17 @@ def main(
     wems = []
 
     print("Collecting sound hierarchies")
-    for snd in sound_ids:
+    for wwise in wwise_ids:
         # Just for debugging
         debug_tree = {}
 
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_idx = src_eid_to_idx.get(f"Play_c{snd}", None)
+        play_evt_idx = src_eid_to_idx.get(f"Play_c{wwise}", None)
         if play_evt_idx is None:
-            raise ValueError(f"Could not find {snd} in source soundbank")
+            raise ValueError(f"Could not find wwise ID {wwise} in source soundbank")
 
-        stop_evt_idx = src_eid_to_idx[f"Stop_c{snd}"]
+        stop_evt_idx = src_eid_to_idx[f"Stop_c{wwise}"]
 
         # Add the play/stop events and actions
         transfer_object_indices = [
@@ -150,7 +150,7 @@ def main(
         if actor_mixer_id is None:
             raise ValueError("ActorMixer could not be found")
 
-        print(f"Parsing wwise {snd} resulted in the following hierarchy:")
+        print(f"Parsing wwise {wwise} resulted in the following hierarchy:")
         pprint(debug_tree)
 
         print("The following wems were collected:")
@@ -230,18 +230,18 @@ def main(
                 sec["body"]["HIRC"]["objects"] = dst_hirc
                 break
 
-        backup = dst_bnk_path.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
-        shutil.move(dst_json, dst_bnk_path.parent / backup)
+        backup = dst_bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
+        shutil.move(dst_json, dst_bnk_dir.parent / backup)
         with dst_json.open("w") as f:
             json.dump(dst_bnk, f, indent=2)
 
         print(f"Copying {len(wems)} wems")
         for wem in wems:
             wem_name = f"{wem}.wem"
-            if (dst_bnk_path / wem_name).is_file():
+            if (dst_bnk_dir / wem_name).is_file():
                 print(f"wem {wem_name} already exists, skipping")
             else:
-                shutil.copy(src_bnk_path / wem_name, dst_bnk_path / wem_name)
+                shutil.copy(src_bnk_dir / wem_name, dst_bnk_dir / wem_name)
 
     input("\nDone! Press Enter to exit")
 
