@@ -150,7 +150,7 @@ def main(
         if actor_mixer_id is None:
             raise ValueError("ActorMixer could not be found")
 
-        print(f"parsing {snd} resulted in the following hierarchy:")
+        print(f"Parsing wwise {snd} resulted in the following hierarchy:")
         pprint(debug_tree)
 
         print("The following wems were collected:")
