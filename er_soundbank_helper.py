@@ -8,12 +8,13 @@ import json
 from pprint import pprint
 
 
-SRC_BNK_DIR = "../cs_c2500"
+SRC_BNK_DIR = "../cs_c4770"
 DST_BNK_DIR = "../cs_main"
 WWISE_IDS = [
-    250006503,
+    477006000,
+    477006500,
 ]
-ENABLE_WRITE = False
+ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = False
@@ -21,7 +22,7 @@ NO_QUESTIONS = False
 
 def load_indices(
     bnk: dict,
-) -> tuple[list[dict], dict[int, int], dict[str, int]]:
+) -> tuple[list[dict], dict[int, int]]:
     sections = bnk.get("sections", None)
 
     if not sections:
@@ -34,20 +35,19 @@ def load_indices(
     else:
         raise ValueError("Could not find HIRC in bnk")
 
-    objects = {}
-    events = {}
+    idmap = {}
     for idx, obj in enumerate(hirc):
         idsec = obj["id"]
         if "Hash" in idsec:
             oid = idsec["Hash"]
-            objects[oid] = idx
+            idmap[oid] = idx
         elif "String" in idsec:
             eid = idsec["String"]
-            events[eid] = idx
+            idmap[eid] = idx
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
-    return hirc, objects, events
+    return hirc, idmap
 
 
 def print_hierarchy(debug_tree: list, prefix: str = ""):
@@ -94,19 +94,19 @@ def main(
     with dst_json.open() as f:
         dst_bnk: dict = json.load(f)
 
-    src_hirc, src_oid_to_idx, src_eid_to_idx = load_indices(src_bnk)
-    dst_hirc, dst_oid_to_idx, dst_eid_to_idx = load_indices(dst_bnk)
+    src_hirc, src_idmap = load_indices(src_bnk)
+    dst_hirc, dst_idmap = load_indices(dst_bnk)
     wems = []
 
     print("Collecting sound hierarchies")
     for wwise in wwise_ids:
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_idx = src_eid_to_idx.get(f"Play_c{wwise}", None)
+        play_evt_idx = src_idmap.get(f"Play_c{wwise}", None)
         if play_evt_idx is None:
             raise ValueError(f"Could not find wwise ID {wwise} in source soundbank")
 
-        stop_evt_idx = src_eid_to_idx[f"Stop_c{wwise}"]
+        stop_evt_idx = src_idmap[f"Stop_c{wwise}"]
 
         # The play and stop events are not part of the HIRC
         transfer_event_indices = [
@@ -122,7 +122,7 @@ def main(
         # Find the container the action is triggering, then go up the hierarchy until we find
         # the ActorMixer responsible for playback
         parent_id = src_hirc[play_evt_idx - 1]["body"]["Action"]["external_id"]
-        root_idx = src_oid_to_idx[parent_id]
+        root_idx = src_idmap[parent_id]
 
         visited = set()
         debug_tree = []
@@ -162,7 +162,7 @@ def main(
                 children = node_params["children"].get("items", [])
 
                 for child_id in children:
-                    child_idx = src_oid_to_idx[child_id]
+                    child_idx = src_idmap[child_id]
                     todo.append((child_idx, debug_children))
 
         # Go up to find the ActorMixer the root belongs to
@@ -173,7 +173,7 @@ def main(
         parent_id = root_params["node_base_params"]["direct_parent_id"]
 
         while True:
-            parent_idx = src_oid_to_idx[parent_id]
+            parent_idx = src_idmap[parent_id]
 
             parent = src_hirc[parent_idx]
             parent_type = next(iter(parent["body"].keys()))
@@ -203,8 +203,8 @@ def main(
         print()
 
         # Check if the ActorMixer already exists in the destination soundbank
-        if actor_mixer_id in dst_oid_to_idx:
-            obj_transfer_idx = dst_oid_to_idx[actor_mixer_id]
+        if actor_mixer_id in dst_idmap:
+            obj_transfer_idx = dst_idmap[actor_mixer_id]
             dst_actor_mixer = dst_hirc[obj_transfer_idx]
 
             print(
@@ -212,12 +212,12 @@ def main(
             )
         else:
             # ActorMixer does not exist yet, copy it below the first SC
-            actor_mixer_idx = src_oid_to_idx[actor_mixer_id]
+            actor_mixer_idx = src_idmap[actor_mixer_id]
             dst_actor_mixer = src_hirc[
                 actor_mixer_idx
             ]  # not a copy, but should be okay
             dst_actor_mixer["body"]["ActorMixer"]["children"]["items"] = []
-            transfer_object_indices.append(src_oid_to_idx[actor_mixer_id])
+            transfer_object_indices.append(src_idmap[actor_mixer_id])
 
             obj_transfer_idx = -1
             for idx, obj in enumerate(dst_hirc):
@@ -245,7 +245,7 @@ def main(
             obj = src_hirc[idx]
             oid = next(iter(obj["id"].values()))
 
-            if oid in dst_oid_to_idx:
+            if oid in dst_idmap:
                 if no_questions:
                     print(f"Skipping already existing object {oid}")
                     reply = "s"
@@ -272,9 +272,9 @@ def main(
             dst_hirc.insert(obj_transfer_idx, obj)
 
             # Since we have inserted something, all subsequent indices will be offset
-            for oid, idx in dst_oid_to_idx.items():
+            for oid, idx in dst_idmap.items():
                 if idx >= obj_transfer_idx:
-                    dst_oid_to_idx[oid] = idx + 1
+                    dst_idmap[oid] = idx + 1
 
             obj_transfer_idx += 1
 
@@ -286,7 +286,7 @@ def main(
 
         # Now we write the play and stop events into the event section
         evt_transfer_idx = -1
-        for evt_idx in dst_eid_to_idx.values():
+        for evt_idx in dst_idmap.values():
             evt = dst_hirc[evt_idx]
             evt_id = str(next(iter(evt["id"].values())))
             if evt_id.startswith("Play_c"):
@@ -297,7 +297,7 @@ def main(
             evt = src_hirc[idx]
             eid = next(iter(obj["id"].values()))
 
-            if eid in dst_eid_to_idx:
+            if eid in dst_idmap:
                 if no_questions:
                     print(f"Skipping already existing event {eid}")
                     reply = "s"
@@ -324,9 +324,9 @@ def main(
             dst_hirc.insert(evt_transfer_idx, evt)
 
             # Since we have inserted something, all subsequent indices will be offset
-            for eid, idx in dst_eid_to_idx.items():
+            for eid, idx in dst_idmap.items():
                 if idx >= evt_transfer_idx:
-                    dst_eid_to_idx[eid] = idx + 1
+                    dst_idmap[eid] = idx + 1
 
             evt_transfer_idx += 1
 
