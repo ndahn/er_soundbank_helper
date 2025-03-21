@@ -8,16 +8,34 @@ import json
 from pprint import pprint
 
 
-SRC_BNK_DIR = "../cs_c4770"
+SRC_BNK_DIR = "../cs_c2010"
 DST_BNK_DIR = "../cs_main"
 WWISE_IDS = [
-    477006000,
-    477006500,
+    201005002,
 ]
 ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = False
+
+
+def calc_hash(input: str) -> int:
+    # Taken from rewwise
+    # https://github.com/vswarte/rewwise/blob/127d665ab5393fb7b58f1cade8e13a46f71e3972/analysis/src/fnv.rs#L6
+    FNV_BASE = 2166136261
+    FNV_PRIME = 16777619
+    
+    input_lower = input.lower()
+    input_bytes = input_lower.encode()
+    
+    result = FNV_BASE
+    for byte in input_bytes:
+        result *= FNV_PRIME
+        # Ensure it stays within 32-bit range
+        result &= 0xFFFFFFFF
+        result ^= byte
+    
+    return result
 
 
 def load_indices(
@@ -44,6 +62,9 @@ def load_indices(
         elif "String" in idsec:
             eid = idsec["String"]
             idmap[eid] = idx
+            # Events are sometimes referred to by their hash, but it's not included in the json
+            oid = calc_hash(eid)
+            idmap[oid] = idx
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
@@ -108,227 +129,249 @@ def main(
 
         stop_evt_idx = src_idmap[f"Stop_c{wwise}"]
 
-        # The play and stop events are not part of the HIRC
-        transfer_event_indices = [
-            stop_evt_idx - 1,
-            stop_evt_idx,
-            play_evt_idx - 1,
-            play_evt_idx,
-        ]
+        # Indices of objects we want to transfer
+        transfer_event_indices = []
+
+        # Some events have multiple associated actions, so we can't just take the preceeding action
+        stop_evt = src_hirc[stop_evt_idx]
+        stop_actions = stop_evt["body"]["Event"]["actions"]
+        for action_hash in stop_actions:
+            action_idx = src_idmap[action_hash]
+            transfer_event_indices.append(action_idx)
+        transfer_event_indices.append(stop_evt_idx)
+
+        play_evt = src_hirc[play_evt_idx]
+        play_actions = play_evt["body"]["Event"]["actions"]
+        for action_hash in play_actions:
+            action_idx = src_idmap[action_hash]
+            transfer_event_indices.append(action_idx)
+        transfer_event_indices.append(play_evt_idx)
 
         # All the objects we want to transfer
         transfer_object_indices = deque()
 
-        # Find the container the action is triggering, then go up the hierarchy until we find
-        # the ActorMixer responsible for playback
-        parent_id = src_hirc[play_evt_idx - 1]["body"]["Action"]["external_id"]
-        root_idx = src_idmap[parent_id]
+        for action_hash in play_actions:
+            action = src_hirc[src_idmap[action_hash]]
 
-        visited = set()
-        debug_tree = []
-        todo = deque([(root_idx, debug_tree)])
+            # Find the container the action is triggering, then go up the hierarchy until we find
+            # the ActorMixer responsible for playback
+            parent_id = action["body"]["Action"]["external_id"]
+            if parent_id in transfer_object_indices:
+                continue
 
-        # Depth first search to recover all nodes part of the wwise hierarchy
-        while todo:
-            node_idx, debug_parent = todo.pop()
+            root_idx = src_idmap[parent_id]
 
-            if node_idx in visited:
-                return
+            if "Event" in src_hirc[root_idx]["body"]:
+                # Action references another event, let's assume ER doesn't go too crazy here
+                if root_idx not in transfer_event_indices:
+                    raise RuntimeError("Don't know how to handle references to foreign events (yet)!")
+                continue
 
-            # All children will be appended left so they appear before their
-            # parents in the transfer indices list
-            transfer_object_indices.appendleft(node_idx)
-            visited.add(node_idx)
+            visited = set()
+            debug_tree = []
+            todo = deque([(root_idx, debug_tree)])
 
-            node = src_hirc[node_idx]
-            node_type = next(iter(node["body"].keys()))
-            node_params = node["body"][node_type]
-            oid = next(iter(node["id"].values()))
+            # Depth first search to recover all nodes part of the wwise hierarchy
+            while todo:
+                node_idx, debug_parent = todo.pop()
 
-            if node_type == "Sound":
-                # We found an actual sound
-                wem = node_params["bank_source_data"]["media_information"]["source_id"]
-                wems.append(wem)
-                debug_key = f"{node_type} ({oid}) -> {wem}.wem"
+                if node_idx in visited:
+                    return
+
+                # All children will be appended left so they appear before their
+                # parents in the transfer indices list
+                transfer_object_indices.appendleft(node_idx)
+                visited.add(node_idx)
+
+                node = src_hirc[node_idx]
+                node_type = next(iter(node["body"].keys()))
+                node_params = node["body"][node_type]
+                oid = next(iter(node["id"].values()))
+
+                if node_type == "Sound":
+                    # We found an actual sound
+                    wem = node_params["bank_source_data"]["media_information"]["source_id"]
+                    wems.append(wem)
+                    debug_key = f"{node_type} ({oid}) -> {wem}.wem"
+                else:
+                    debug_key = f"{node_type} ({oid})"
+
+                # Just for printing the hierarchy
+                debug_children = []
+                debug_entry = {debug_key: debug_children}
+                debug_parent.append(debug_entry)
+
+                if "children" in node_params:
+                    children = node_params["children"].get("items", [])
+
+                    for child_id in children:
+                        child_idx = src_idmap[child_id]
+                        todo.append((child_idx, debug_children))
+
+            # Go up to find the ActorMixer the root belongs to
+            actor_mixer_id = None
+            root = src_hirc[root_idx]
+            root_id = next(iter(root["id"].values()))
+            root_params = next(iter(root["body"].values()))
+            parent_id = root_params["node_base_params"]["direct_parent_id"]
+
+            while True:
+                parent_idx = src_idmap[parent_id]
+
+                parent = src_hirc[parent_idx]
+                parent_type = next(iter(parent["body"].keys()))
+                parent_params = parent["body"][parent_type]
+                oid = next(iter(parent["id"].values()))
+
+                # The ActorMixer is where our hierarchy will be included from
+                if parent_type == "ActorMixer":
+                    actor_mixer_id = oid
+                    break
+
+                # ActorMixer should be the direct parent, but you never know...
+                transfer_object_indices.append(parent_idx)
+                parent_id = parent_params["node_base_params"]["direct_parent_id"]
+
+            if actor_mixer_id is None:
+                raise ValueError("ActorMixer could not be found")
+
+            print(f"Parsing wwise {wwise} resulted in the following hierarchy:")
+            print(f"\nWwise {wwise}")
+            print_hierarchy(debug_tree)
+            print()
+            # pprint(debug_tree)
+
+            print("The following wems were collected:")
+            pprint(wems)
+            print()
+
+            # Check if the ActorMixer already exists in the destination soundbank
+            if actor_mixer_id in dst_idmap:
+                obj_transfer_idx = dst_idmap[actor_mixer_id]
+                dst_actor_mixer = dst_hirc[obj_transfer_idx]
+
+                print(
+                    f"Inserting {len(transfer_object_indices)} nodes before actor mixer {actor_mixer_id}"
+                )
             else:
-                debug_key = f"{node_type} ({oid})"
+                # ActorMixer does not exist yet, copy it below the first SC
+                actor_mixer_idx = src_idmap[actor_mixer_id]
+                dst_actor_mixer = src_hirc[
+                    actor_mixer_idx
+                ]  # not a copy, but should be okay
+                dst_actor_mixer["body"]["ActorMixer"]["children"]["items"] = []
+                transfer_object_indices.append(src_idmap[actor_mixer_id])
 
-            # Just for printing the hierarchy
-            debug_children = []
-            debug_entry = {debug_key: debug_children}
-            debug_parent.append(debug_entry)
+                obj_transfer_idx = -1
+                for idx, obj in enumerate(dst_hirc):
+                    obj_type = next(iter(obj["body"].keys()))
+                    if obj_type == "RandomSequenceContainer":
+                        obj_transfer_idx = idx + 1
+                        break
 
-            if "children" in node_params:
-                children = node_params["children"].get("items", [])
+                print(
+                    f"Copying ActorMixer {actor_mixer_id} and {len(transfer_object_indices) - 1} nodes"
+                )
 
-                for child_id in children:
-                    child_idx = src_idmap[child_id]
-                    todo.append((child_idx, debug_children))
+            # Shouldn't be required if everything works as expected
+            unique_indices = set(transfer_object_indices)
+            if len(unique_indices) != len(transfer_object_indices):
+                duplicates = [
+                    idx for idx in unique_indices if transfer_object_indices.count(idx) > 1
+                ]
+                print(f"Warning: found duplicate indices {duplicates}")
 
-        # Go up to find the ActorMixer the root belongs to
-        actor_mixer_id = None
-        root = src_hirc[root_idx]
-        root_id = next(iter(root["id"].values()))
-        root_params = next(iter(root["body"].values()))
-        parent_id = root_params["node_base_params"]["direct_parent_id"]
+                # The power of ordered dicts, right at my fingertips *_*
+                transfer_object_indices = list(dict.fromkeys(transfer_object_indices))
 
-        while True:
-            parent_idx = src_idmap[parent_id]
+            for idx in transfer_object_indices:
+                obj = src_hirc[idx]
+                oid = next(iter(obj["id"].values()))
 
-            parent = src_hirc[parent_idx]
-            parent_type = next(iter(parent["body"].keys()))
-            parent_params = parent["body"][parent_type]
-            oid = next(iter(parent["id"].values()))
+                if oid in dst_idmap:
+                    if no_questions:
+                        print(f"Skipping already existing object {oid}")
+                        reply = "s"
+                    else:
+                        while True:
+                            reply = input(
+                                f"Object ID {oid} already exists in target soundbank. "
+                                "[s]kip, [c]ancel, [w]rite? > "
+                            )
 
-            # The ActorMixer is where our hierarchy will be included from
-            if parent_type == "ActorMixer":
-                actor_mixer_id = oid
-                break
+                            if reply in "scw":
+                                break
 
-            # ActorMixer should be the direct parent, but you never know...
-            transfer_object_indices.append(parent_idx)
-            parent_id = parent_params["node_base_params"]["direct_parent_id"]
+                    if reply == "s":
+                        # skip
+                        continue
+                    if reply == "c":
+                        # cancel everything
+                        sys.exit(-1)
+                    if reply == "w":
+                        # write anyways
+                        break
 
-        if actor_mixer_id is None:
-            raise ValueError("ActorMixer could not be found")
+                dst_hirc.insert(obj_transfer_idx, obj)
 
-        print(f"Parsing wwise {wwise} resulted in the following hierarchy:")
-        print(f"\nWwise {wwise}")
-        print_hierarchy(debug_tree)
-        print()
-        # pprint(debug_tree)
+                # Since we have inserted something, all subsequent indices will be offset
+                for oid, idx in dst_idmap.items():
+                    if idx >= obj_transfer_idx:
+                        dst_idmap[oid] = idx + 1
 
-        print("The following wems were collected:")
-        pprint(wems)
-        print()
+                obj_transfer_idx += 1
 
-        # Check if the ActorMixer already exists in the destination soundbank
-        if actor_mixer_id in dst_idmap:
-            obj_transfer_idx = dst_idmap[actor_mixer_id]
-            dst_actor_mixer = dst_hirc[obj_transfer_idx]
+            # Add the inserted hierarchy to the ActorMixer in the destination
+            dst_am_children: list = dst_actor_mixer["body"]["ActorMixer"]["children"]
+            dst_am_children_items = dst_am_children.setdefault("items", [])
+            dst_am_children_items.append(root_id)
+            dst_am_children_items.sort()
 
-            print(
-                f"Inserting {len(transfer_object_indices)} nodes before actor mixer {actor_mixer_id}"
-            )
-        else:
-            # ActorMixer does not exist yet, copy it below the first SC
-            actor_mixer_idx = src_idmap[actor_mixer_id]
-            dst_actor_mixer = src_hirc[
-                actor_mixer_idx
-            ]  # not a copy, but should be okay
-            dst_actor_mixer["body"]["ActorMixer"]["children"]["items"] = []
-            transfer_object_indices.append(src_idmap[actor_mixer_id])
-
-            obj_transfer_idx = -1
-            for idx, obj in enumerate(dst_hirc):
-                obj_type = next(iter(obj["body"].keys()))
-                if obj_type == "RandomSequenceContainer":
-                    obj_transfer_idx = idx + 1
+            # Now we write the play and stop events into the event section
+            evt_transfer_idx = -1
+            for evt_idx in dst_idmap.values():
+                evt = dst_hirc[evt_idx]
+                evt_id = str(next(iter(evt["id"].values())))
+                if evt_id.startswith("Play_c"):
+                    evt_transfer_idx = evt_idx + 1
                     break
 
-            print(
-                f"Copying ActorMixer {actor_mixer_id} and {len(transfer_object_indices) - 1} nodes"
-            )
+            for idx in transfer_event_indices:
+                evt = src_hirc[idx]
+                eid = next(iter(obj["id"].values()))
 
-        # Shouldn't be required if everything works as expected
-        unique_indices = set(transfer_object_indices)
-        if len(unique_indices) != len(transfer_object_indices):
-            duplicates = [
-                idx for idx in unique_indices if transfer_object_indices.count(idx) > 1
-            ]
-            print(f"Warning: found duplicate indices {duplicates}")
+                if eid in dst_idmap:
+                    if no_questions:
+                        print(f"Skipping already existing event {eid}")
+                        reply = "s"
+                    else:
+                        while True:
+                            reply = input(
+                                f"Event ID {eid} already exists in target soundbank. "
+                                "[s]kip, [c]ancel, [w]rite? > "
+                            )
 
-            # The power of ordered dicts, right at my fingertips *_*
-            transfer_object_indices = list(dict.fromkeys(transfer_object_indices))
+                            if reply in "scw":
+                                break
 
-        for idx in transfer_object_indices:
-            obj = src_hirc[idx]
-            oid = next(iter(obj["id"].values()))
+                    if reply == "s":
+                        # skip
+                        continue
+                    if reply == "c":
+                        # cancel everything
+                        sys.exit(-1)
+                    if reply == "w":
+                        # write anyways
+                        break
 
-            if oid in dst_idmap:
-                if no_questions:
-                    print(f"Skipping already existing object {oid}")
-                    reply = "s"
-                else:
-                    while True:
-                        reply = input(
-                            f"Object ID {oid} already exists in target soundbank. "
-                            "[s]kip, [c]ancel, [w]rite? > "
-                        )
+                dst_hirc.insert(evt_transfer_idx, evt)
 
-                        if reply in "scw":
-                            break
+                # Since we have inserted something, all subsequent indices will be offset
+                for eid, idx in dst_idmap.items():
+                    if idx >= evt_transfer_idx:
+                        dst_idmap[eid] = idx + 1
 
-                if reply == "s":
-                    # skip
-                    continue
-                if reply == "c":
-                    # cancel everything
-                    sys.exit(-1)
-                if reply == "w":
-                    # write anyways
-                    break
-
-            dst_hirc.insert(obj_transfer_idx, obj)
-
-            # Since we have inserted something, all subsequent indices will be offset
-            for oid, idx in dst_idmap.items():
-                if idx >= obj_transfer_idx:
-                    dst_idmap[oid] = idx + 1
-
-            obj_transfer_idx += 1
-
-        # Add the inserted hierarchy to the ActorMixer in the destination
-        dst_am_children: list = dst_actor_mixer["body"]["ActorMixer"]["children"]
-        dst_am_children_items = dst_am_children.setdefault("items", [])
-        dst_am_children_items.append(root_id)
-        dst_am_children_items.sort()
-
-        # Now we write the play and stop events into the event section
-        evt_transfer_idx = -1
-        for evt_idx in dst_idmap.values():
-            evt = dst_hirc[evt_idx]
-            evt_id = str(next(iter(evt["id"].values())))
-            if evt_id.startswith("Play_c"):
-                evt_transfer_idx = evt_idx + 1
-                break
-
-        for idx in transfer_event_indices:
-            evt = src_hirc[idx]
-            eid = next(iter(obj["id"].values()))
-
-            if eid in dst_idmap:
-                if no_questions:
-                    print(f"Skipping already existing event {eid}")
-                    reply = "s"
-                else:
-                    while True:
-                        reply = input(
-                            f"Event ID {eid} already exists in target soundbank. "
-                            "[s]kip, [c]ancel, [w]rite? > "
-                        )
-
-                        if reply in "scw":
-                            break
-
-                if reply == "s":
-                    # skip
-                    continue
-                if reply == "c":
-                    # cancel everything
-                    sys.exit(-1)
-                if reply == "w":
-                    # write anyways
-                    break
-
-            dst_hirc.insert(evt_transfer_idx, evt)
-
-            # Since we have inserted something, all subsequent indices will be offset
-            for eid, idx in dst_idmap.items():
-                if idx >= evt_transfer_idx:
-                    dst_idmap[eid] = idx + 1
-
-            evt_transfer_idx += 1
+                evt_transfer_idx += 1
 
     print("All hierarchies collected")
 
@@ -339,7 +382,7 @@ def main(
     else:
         if not no_questions:
             reply = ""
-            while reply not in "yn":
+            while not reply or reply not in "yn":
                 reply = input("Write to destination? [y/n] > ")
 
             if reply == "y":
@@ -368,7 +411,7 @@ def main(
             else:
                 shutil.copy(src_bnk_dir / wem_name, dst_bnk_dir / wem_name)
 
-    input("\nDone! Press Enter to exit")
+    input("\nDone! Next: repack the target soundbank. Press Enter to exit")
 
 
 if __name__ == "__main__":
