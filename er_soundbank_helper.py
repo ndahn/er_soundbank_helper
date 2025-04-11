@@ -8,10 +8,11 @@ import json
 from pprint import pprint
 
 
-SRC_BNK_DIR = "../cs_c2010"
+SRC_BNK_DIR = "../cs_c5120"
 DST_BNK_DIR = "../cs_main"
 WWISE_IDS = [
-    201005002,
+    512006630,
+    512006635,
 ]
 ENABLE_WRITE = True
 
@@ -53,22 +54,22 @@ def load_indices(
     else:
         raise ValueError("Could not find HIRC in bnk")
 
-    idmap = {}
+    id_map = {}
     for idx, obj in enumerate(hirc):
         idsec = obj["id"]
         if "Hash" in idsec:
             oid = idsec["Hash"]
-            idmap[oid] = idx
+            id_map[oid] = idx
         elif "String" in idsec:
             eid = idsec["String"]
-            idmap[eid] = idx
+            id_map[eid] = idx
             # Events are sometimes referred to by their hash, but it's not included in the json
             oid = calc_hash(eid)
-            idmap[oid] = idx
+            id_map[oid] = idx
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
-    return hirc, idmap
+    return hirc, id_map
 
 
 def print_hierarchy(debug_tree: list, prefix: str = ""):
@@ -83,6 +84,21 @@ def print_hierarchy(debug_tree: list, prefix: str = ""):
 
             new_prefix = prefix + ("   " if is_last else "│  ")
             print_hierarchy(children, new_prefix)
+
+
+def get_event_idx(evt_name: str, id_map: dict[int, int]) -> int:
+    idx = id_map.get(evt_name, None)
+        
+    if idx is not None:
+        return idx
+    
+    play_evt_hash = calc_hash(evt_name)
+    idx = id_map.get(play_evt_hash)
+    
+    if idx is not None:
+        return idx
+    
+    raise ValueError(f"Could not find index for event {evt_name}")
 
 
 def main(
@@ -123,11 +139,8 @@ def main(
     for wwise in wwise_ids:
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_idx = src_idmap.get(f"Play_c{wwise}", None)
-        if play_evt_idx is None:
-            raise ValueError(f"Could not find wwise ID {wwise} in source soundbank")
-
-        stop_evt_idx = src_idmap[f"Stop_c{wwise}"]
+        play_evt_idx = get_event_idx(f"Play_c{wwise}", src_idmap)
+        stop_evt_idx = get_event_idx(f"Stop_c{wwise}", src_idmap)
 
         # Indices of objects we want to transfer
         transfer_event_indices = []
