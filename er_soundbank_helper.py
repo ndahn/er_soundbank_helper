@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 import sys
+from copy import deepcopy
 import traceback
 from collections import deque
 from pathlib import Path
 import shutil
 import json
+import re
 from pprint import pprint
 
-
-SRC_BNK_DIR = "../cs_c5120"
+SRC_BNK_DIR = "../cs_c4520"
 DST_BNK_DIR = "../cs_main"
-WWISE_IDS = [
-    512006630,
-    512006635,
-]
+
+# NPC sounds are usually named <npc-id>0<sound-id>. When moving npc sounds to the player, I 
+# recommend renaming them as follows. 
+#
+#     4<npc-id><sound-id>
+#
+# This should make it easy to avoid collisions and allows you to keep track which IDs you've 
+# ported so far and from where.
+WWISE_IDS = {
+    "c452005011": "s445205011",
+    "c452006107": "s445206107",
+}
 ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
@@ -104,11 +113,19 @@ def get_event_idx(evt_name: str, id_map: dict[int, int]) -> int:
 def main(
     src_bnk_dir: str,
     dst_bnk_dir: str,
-    wwise_ids: list[int],
+    wwise_map: dict[str, str],
     *,
     enable_write: bool = True,
     no_questions: bool = False,
 ):
+    wwise_id_check = re.compile(r"[acfopsmvxbiyzegd][0-9]{9}")
+
+    if not all(re.fullmatch(wwise_id_check, key) for key in wwise_map.keys()):
+        raise ValueError("All source wwise IDs must follow the pattern <SoundType><9-digit-ID>")
+    
+    if not all(re.fullmatch(wwise_id_check, val) for val in wwise_map.values()):
+        raise ValueError("All destination wwise IDs must follow the pattern <SoundType><9-digit-ID>")
+
     src_bnk_dir: Path = Path(src_bnk_dir)
     dst_bnk_dir: Path = Path(dst_bnk_dir)
 
@@ -136,11 +153,11 @@ def main(
     wems = []
 
     print("Collecting sound hierarchies")
-    for wwise in wwise_ids:
+    for wwise_src, wwise_dst in wwise_map.items():
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_idx = get_event_idx(f"Play_c{wwise}", src_idmap)
-        stop_evt_idx = get_event_idx(f"Stop_c{wwise}", src_idmap)
+        play_evt_idx = get_event_idx(f"Play_{wwise_src}", src_idmap)
+        stop_evt_idx = get_event_idx(f"Stop_{wwise_src}", src_idmap)
 
         # Indices of objects we want to transfer
         transfer_event_indices = []
@@ -248,8 +265,8 @@ def main(
             if actor_mixer_id is None:
                 raise ValueError("ActorMixer could not be found")
 
-            print(f"Parsing wwise {wwise} resulted in the following hierarchy:")
-            print(f"\nWwise {wwise}")
+            print(f"Parsing wwise {wwise_src} resulted in the following hierarchy:")
+            print(f"\nWwise {wwise_src}")
             print_hierarchy(debug_tree)
             print()
             # pprint(debug_tree)
@@ -264,7 +281,7 @@ def main(
                 dst_actor_mixer = dst_hirc[obj_transfer_idx]
 
                 print(
-                    f"Inserting {len(transfer_object_indices)} nodes before actor mixer {actor_mixer_id}"
+                    f"Inserting {len(transfer_object_indices)} nodes before ActorMixer {actor_mixer_id}"
                 )
             else:
                 # ActorMixer does not exist yet, copy it below the first SC
@@ -286,6 +303,12 @@ def main(
                     f"Copying ActorMixer {actor_mixer_id} and {len(transfer_object_indices) - 1} nodes"
                 )
 
+            # Add the hierarchy we're about to insert to the destination's ActorMixer's children
+            dst_am_children: list = dst_actor_mixer["body"]["ActorMixer"]["children"]
+            dst_am_children_items = dst_am_children.setdefault("items", [])
+            dst_am_children_items.append(root_id)
+            dst_am_children_items.sort()
+
             # Shouldn't be required if everything works as expected
             unique_indices = set(transfer_object_indices)
             if len(unique_indices) != len(transfer_object_indices):
@@ -297,6 +320,7 @@ def main(
                 # The power of ordered dicts, right at my fingertips *_*
                 transfer_object_indices = list(dict.fromkeys(transfer_object_indices))
 
+            # Transfer the objects
             for idx in transfer_object_indices:
                 obj = src_hirc[idx]
                 oid = next(iter(obj["id"].values()))
@@ -307,12 +331,13 @@ def main(
                         reply = "s"
                     else:
                         while True:
+                            obj_type = next(iter(obj["body"].keys()))
                             reply = input(
-                                f"Object ID {oid} already exists in target soundbank. "
-                                "[s]kip, [c]ancel, [w]rite? > "
+                                f"Object ID {oid} ({obj_type}) already exists in target soundbank. "
+                                "[s]kip, [c]ancel, [r]eplace? > "
                             )
 
-                            if reply in "scw":
+                            if reply in "scr":
                                 break
 
                     if reply == "s":
@@ -321,9 +346,11 @@ def main(
                     if reply == "c":
                         # cancel everything
                         sys.exit(-1)
-                    if reply == "w":
-                        # write anyways
-                        break
+                    if reply == "r":
+                        # replace
+                        dst_idx = dst_idmap[oid]
+                        dst_hirc[dst_idx] = obj
+                        continue
 
                 dst_hirc.insert(obj_transfer_idx, obj)
 
@@ -333,12 +360,6 @@ def main(
                         dst_idmap[oid] = idx + 1
 
                 obj_transfer_idx += 1
-
-            # Add the inserted hierarchy to the ActorMixer in the destination
-            dst_am_children: list = dst_actor_mixer["body"]["ActorMixer"]["children"]
-            dst_am_children_items = dst_am_children.setdefault("items", [])
-            dst_am_children_items.append(root_id)
-            dst_am_children_items.sort()
 
             # Now we write the play and stop events into the event section
             evt_transfer_idx = -1
@@ -350,8 +371,14 @@ def main(
                     break
 
             for idx in transfer_event_indices:
-                evt = src_hirc[idx]
-                eid = next(iter(obj["id"].values()))
+                evt = deepcopy(src_hirc[idx])
+
+                if idx == play_evt_idx:
+                    evt["id"] = { "Hash": calc_hash(f"Play_{wwise_dst}") }
+                elif idx == stop_evt_idx:
+                    evt["id"] = { "Hash": calc_hash(f"Stop_{wwise_dst}") }
+
+                eid = next(iter(evt["id"].values()))
 
                 if eid in dst_idmap:
                     if no_questions:
@@ -359,12 +386,14 @@ def main(
                         reply = "s"
                     else:
                         while True:
+                            # Getting the action type is possible but more effort, so...
+                            orig_eid = next(iter(src_hirc[idx]["id"].values()))
                             reply = input(
-                                f"Event ID {eid} already exists in target soundbank. "
-                                "[s]kip, [c]ancel, [w]rite? > "
+                                f"Event ID {eid} ({orig_eid}) already exists in target soundbank. "
+                                "[s]kip, [c]ancel, [r]replace? > "
                             )
 
-                            if reply in "scw":
+                            if reply in "scr":
                                 break
 
                     if reply == "s":
@@ -373,9 +402,11 @@ def main(
                     if reply == "c":
                         # cancel everything
                         sys.exit(-1)
-                    if reply == "w":
-                        # write anyways
-                        break
+                    if reply == "r":
+                        # replace
+                        dst_idx = dst_idmap[eid]
+                        dst_hirc[dst_idx] = evt
+                        continue
 
                 dst_hirc.insert(evt_transfer_idx, evt)
 
@@ -424,7 +455,11 @@ def main(
             else:
                 shutil.copy(src_bnk_dir / wem_name, dst_bnk_dir / wem_name)
 
-    input("\nDone! Next: repack the target soundbank. Press Enter to exit")
+    print("\nDone! The following wwise play events were registered:")
+    for wwise_src, wwise_dst in wwise_map.items():
+        print(f" - {wwise_src} -> {wwise_dst} ({calc_hash(wwise_dst)})")
+
+    input("\nNext, repack your target soundbank. Press Enter to exit...")
 
 
 if __name__ == "__main__":
