@@ -9,34 +9,8 @@ import json
 import re
 from pprint import pprint
 
-"""
-# 2010
-c201005002
 
-# 2500
-c250006503
-
-# 4520
-c452006107
-c452006106
-c452006102
-c452005011
-c452005008
-c452005010
-c452007001
-
-# 4770
-c477008001
-c477001000
-c477006500
-c477008003
-c477005006
-
-# 5120
-c512006630
-c512006635
-"""
-
+# ------------------------------------------------------------------------------------------
 SRC_BNK_DIR = "../cs_c4520"
 DST_BNK_DIR = "../cs_main"
 
@@ -55,6 +29,7 @@ ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = False
+# ------------------------------------------------------------------------------------------
 
 
 def calc_hash(input: str) -> int:
