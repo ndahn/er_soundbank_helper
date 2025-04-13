@@ -155,7 +155,7 @@ def get_parent_id(node: dict) -> int:
     return body["node_base_params"]["direct_parent_id"]
 
 
-def add_children(node: dict, *new_items: int):
+def add_children(node: dict, *new_item_ids: int):
     body = get_body(node)
 
     if "children" not in body:
@@ -165,7 +165,7 @@ def add_children(node: dict, *new_items: int):
 
     children: dict = body["children"]
     items: list = children.get("items", [])
-    items.extend(new_items)
+    items.extend(new_item_ids)
 
     # Make sure the items are unique and sorted
     children["items"] = sorted(list(set(items)))
@@ -350,7 +350,8 @@ def main(
 
                     break
 
-                upchain.appendleft(parent_id)
+                # Children before parents
+                upchain.append(parent_id)
                 parent = src_hirc[src_idmap[parent_id]]
                 parent_id = get_parent_id(parent)
 
@@ -371,35 +372,31 @@ def main(
 
             # Where to insert the objects in the destination soundbank
             obj_transfer_idx = -1
+            up_child_id = get_id(entrypoint)
 
-            # Go through the parents chain and see what needs to be transferred
-            for up_id in reversed(upchain):
+            # Go upwards through the parents chain and see what needs to be transferred
+            for up_id in upchain:
                 if up_id in dst_idmap:
-                    # Must be inserted *before* the parent
+                    # Once we encounter an existing node we can assume the rest of the chain is 
+                    # intact. Child nodes must be inserted *before* the first existing parent. 
                     obj_transfer_idx = dst_idmap[up_id]
+                    add_children(dst_hirc[dst_idmap[up_id]], up_child_id)
                     break
 
                 up_idx = src_idmap[up_id]
+                up = src_hirc[up_idx]
+
                 if up_idx in transfer_object_indices:
-                    # TODO add children
+                    add_children(up, up_child_id)
                     continue
 
+                # First time we encounter upchain node, clear the children, as non-existing items 
+                # will make the soundbank invalid
+                get_body(up)["children"]["items"] = []
+                add_children(up, up_child_id)
+                
                 transfer_object_indices.append(up_idx)
-                up = src_hirc[up_idx]
-                up_parent_id = get_parent_id(up)
-
-                if up_parent_id != 0:
-                    if up_parent_id in dst_idmap:
-                        # parent is already in the destination soundbank
-                        up_parent = dst_hirc[dst_idmap[up_parent_id]]
-                    else:
-                        # parent still has to be transferred
-                        up_parent = deepcopy(src_hirc[src_idmap[up_parent_id]])
-                        # TODO tis a copy, we have to add it somewhere
-                        children = get_body(up_parent)["children"]
-                        children["items"] = []
-
-                    add_children(up_parent, up_id)
+                up_child_id = up_id
 
             # No part of the hierarchy exists in the destination soundbank yet, place everything
             # after the first RandomSequenceContainer we find
