@@ -9,6 +9,34 @@ import json
 import re
 from pprint import pprint
 
+"""
+# 2010
+c201005002
+
+# 2500
+c250006503
+
+# 4520
+c452006107
+c452006106
+c452006102
+c452005011
+c452005008
+c452005010
+c452007001
+
+# 4770
+c477008001
+c477001000
+c477006500
+c477008003
+c477005006
+
+# 5120
+c512006630
+c512006635
+"""
+
 SRC_BNK_DIR = "../cs_c4520"
 DST_BNK_DIR = "../cs_main"
 
@@ -110,6 +138,39 @@ def get_event_idx(evt_name: str, id_map: dict[int, int]) -> int:
     raise ValueError(f"Could not find index for event {evt_name}")
 
 
+def get_id(node: dict) -> int:
+    return next(iter(node["id"].values()))
+
+
+def get_node_type(node: dict) -> str:
+    return next(iter(node["body"].keys()))
+
+
+def get_body(node: dict) -> dict:
+    return node["body"][get_node_type(node)]
+
+
+def get_parent_id(node: dict) -> int:
+    body = get_body(node)
+    return body["node_base_params"]["direct_parent_id"]
+
+
+def add_children(node: dict, *new_items: int):
+    body = get_body(node)
+
+    if "children" not in body:
+        # Sounds may reference nodes like "EffectCustom" as their parent, but we don't need to 
+        # deal with these as they will work without explicit children
+        return
+
+    children: dict = body["children"]
+    items: list = children.get("items", [])
+    items.extend(new_items)
+
+    # Make sure the items are unique and sorted
+    children["items"] = sorted(list(set(items)))
+
+
 def main(
     src_bnk_dir: str,
     dst_bnk_dir: str,
@@ -118,14 +179,29 @@ def main(
     enable_write: bool = True,
     no_questions: bool = False,
 ):
+    # Check the IDs before we start the heavy work
     wwise_id_check = re.compile(r"[acfopsmvxbiyzegd][0-9]{9}")
-
-    if not all(re.fullmatch(wwise_id_check, key) for key in wwise_map.keys()):
-        raise ValueError("All source wwise IDs must follow the pattern <SoundType><9-digit-ID>")
+    verified_wwise_map = {}
     
-    if not all(re.fullmatch(wwise_id_check, val) for val in wwise_map.values()):
-        raise ValueError("All destination wwise IDs must follow the pattern <SoundType><9-digit-ID>")
+    for src_id, dst_id in wwise_map.items():
+        # Add 0 padding to wwise IDs, otherwise the hashes will be wrong
+        if len(src_id) < 10:
+            src_id = src_id[0] + "0" * (10 - len(src_id)) + src_id[1:]
 
+        if not re.fullmatch(wwise_id_check, src_id):
+            raise ValueError(f"{src_id} is not a valid wwise ID")
+
+        if len(dst_id) < 10:
+            dst_id = dst_id[0] + "0" * (10 - len(dst_id)) + dst_id[1:]
+        
+        if not re.fullmatch(wwise_id_check, dst_id):
+            raise ValueError(f"{dst_id} is not a valid wwise ID")
+        
+        verified_wwise_map[src_id] = dst_id
+
+    wwise_map = verified_wwise_map
+
+    # Load the soundbanks and prepare some lookup tables
     src_bnk_dir: Path = Path(src_bnk_dir)
     dst_bnk_dir: Path = Path(dst_bnk_dir)
 
@@ -152,11 +228,13 @@ def main(
     dst_hirc, dst_idmap = load_indices(dst_bnk)
     wems = []
 
+    # Now we begin
     print("Collecting sound hierarchies")
     for wwise_src, wwise_dst in wwise_map.items():
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_idx = get_event_idx(f"Play_{wwise_src}", src_idmap)
+        play_evt_hash = f"Play_{wwise_src}"
+        play_evt_idx = get_event_idx(play_evt_hash, src_idmap)
         stop_evt_idx = get_event_idx(f"Stop_{wwise_src}", src_idmap)
 
         # Indices of objects we want to transfer
@@ -164,14 +242,14 @@ def main(
 
         # Some events have multiple associated actions, so we can't just take the preceeding action
         stop_evt = src_hirc[stop_evt_idx]
-        stop_actions = stop_evt["body"]["Event"]["actions"]
+        stop_actions = get_body(stop_evt)["actions"]
         for action_hash in stop_actions:
             action_idx = src_idmap[action_hash]
             transfer_event_indices.append(action_idx)
         transfer_event_indices.append(stop_evt_idx)
 
         play_evt = src_hirc[play_evt_idx]
-        play_actions = play_evt["body"]["Event"]["actions"]
+        play_actions = get_body(play_evt)["actions"]
         for action_hash in play_actions:
             action_idx = src_idmap[action_hash]
             transfer_event_indices.append(action_idx)
@@ -185,7 +263,7 @@ def main(
 
             # Find the container the action is triggering, then go up the hierarchy until we find
             # the ActorMixer responsible for playback
-            parent_id = action["body"]["Action"]["external_id"]
+            parent_id = get_body(action)["external_id"]
             if parent_id in transfer_object_indices:
                 continue
 
@@ -194,7 +272,7 @@ def main(
             if "Event" in src_hirc[root_idx]["body"]:
                 # Action references another event, let's assume ER doesn't go too crazy here
                 if root_idx not in transfer_event_indices:
-                    raise RuntimeError("Don't know how to handle references to foreign events (yet)!")
+                    raise RuntimeError(f"Event {parent_id} is referencing another event, but I don't know how to handle this (yet)!")
                 continue
 
             visited = set()
@@ -214,17 +292,17 @@ def main(
                 visited.add(node_idx)
 
                 node = src_hirc[node_idx]
-                node_type = next(iter(node["body"].keys()))
-                node_params = node["body"][node_type]
-                oid = next(iter(node["id"].values()))
+                node_type = get_node_type(node)
+                node_params = get_body(node)
+                obj_id = get_id(node)
 
                 if node_type == "Sound":
                     # We found an actual sound
                     wem = node_params["bank_source_data"]["media_information"]["source_id"]
                     wems.append(wem)
-                    debug_key = f"{node_type} ({oid}) -> {wem}.wem"
+                    debug_key = f"{node_type} ({obj_id}) -> {wem}.wem"
                 else:
-                    debug_key = f"{node_type} ({oid})"
+                    debug_key = f"{node_type} ({obj_id})"
 
                 # Just for printing the hierarchy
                 debug_children = []
@@ -238,35 +316,46 @@ def main(
                         child_idx = src_idmap[child_id]
                         todo.append((child_idx, debug_children))
 
-            # Go up to find the ActorMixer the root belongs to
-            actor_mixer_id = None
-            root = src_hirc[root_idx]
-            root_id = next(iter(root["id"].values()))
-            root_params = next(iter(root["body"].values()))
-            parent_id = root_params["node_base_params"]["direct_parent_id"]
+            # Go up the chain to find all the parents we need
+            entrypoint = src_hirc[root_idx]
+            parent_id = get_parent_id(entrypoint)
 
-            while True:
-                parent_idx = src_idmap[parent_id]
+            upchain = deque()
 
-                parent = src_hirc[parent_idx]
-                parent_type = next(iter(parent["body"].keys()))
-                parent_params = parent["body"][parent_type]
-                oid = next(iter(parent["id"].values()))
-
-                # The ActorMixer is where our hierarchy will be included from
-                if parent_type == "ActorMixer":
-                    actor_mixer_id = oid
+            while parent_id != 0:
+                if parent_id in dst_idmap:
+                    # Parent chain is already in place, no need to transfer anything
                     break
 
-                # ActorMixer should be the direct parent, but you never know...
-                transfer_object_indices.append(parent_idx)
-                parent_id = parent_params["node_base_params"]["direct_parent_id"]
+                # Check for loops. No clue if that ever happens, but better be safe than sorry
+                if parent_id in upchain:
+                    print("WARNING: parent chain seems to contain a loop")
+                    
+                    for idx in upchain:
+                        debug_obj = src_hirc[idx]
+                        debug_obj_id = get_id(debug_obj)
+                        debug_parent = get_parent_id(debug_obj)
+                        print(f"{debug_obj_id} -> {debug_parent}")
+                    
+                    print(f"{debug_parent} -> {parent_id}")
 
-            if actor_mixer_id is None:
-                raise ValueError("ActorMixer could not be found")
+                    while True:
+                        reply = input("Continue? [y/n] > ")
+
+                        if reply == "y":
+                            break
+
+                        if reply == "n":
+                            sys.exit(1)
+
+                    break
+
+                upchain.appendleft(parent_id)
+                parent = src_hirc[src_idmap[parent_id]]
+                parent_id = get_parent_id(parent)
 
             print(f"Parsing wwise {wwise_src} resulted in the following hierarchy:")
-            print(f"\nWwise {wwise_src}")
+            print(f"\nWwise {wwise_src} ({play_evt_hash})")
             print_hierarchy(debug_tree)
             print()
             # pprint(debug_tree)
@@ -275,39 +364,51 @@ def main(
             pprint(wems)
             print()
 
-            # Check if the ActorMixer already exists in the destination soundbank
-            if actor_mixer_id in dst_idmap:
-                obj_transfer_idx = dst_idmap[actor_mixer_id]
-                dst_actor_mixer = dst_hirc[obj_transfer_idx]
+            print("The parent chain consists of the following nodes:")
+            upchain_debug = [f"{key} ({get_node_type(src_hirc[src_idmap[key]])})" for key in upchain]
+            pprint(upchain_debug)
+            print("----------\n")
 
-                print(
-                    f"Inserting {len(transfer_object_indices)} nodes before ActorMixer {actor_mixer_id}"
-                )
-            else:
-                # ActorMixer does not exist yet, copy it below the first SC
-                actor_mixer_idx = src_idmap[actor_mixer_id]
-                dst_actor_mixer = src_hirc[
-                    actor_mixer_idx
-                ]  # not a copy, but should be okay
-                dst_actor_mixer["body"]["ActorMixer"]["children"]["items"] = []
-                transfer_object_indices.append(src_idmap[actor_mixer_id])
+            # Where to insert the objects in the destination soundbank
+            obj_transfer_idx = -1
 
-                obj_transfer_idx = -1
+            # Go through the parents chain and see what needs to be transferred
+            for up_id in reversed(upchain):
+                if up_id in dst_idmap:
+                    # Must be inserted *before* the parent
+                    obj_transfer_idx = dst_idmap[up_id]
+                    break
+
+                up_idx = src_idmap[up_id]
+                if up_idx in transfer_object_indices:
+                    # TODO add children
+                    continue
+
+                transfer_object_indices.append(up_idx)
+                up = src_hirc[up_idx]
+                up_parent_id = get_parent_id(up)
+
+                if up_parent_id != 0:
+                    if up_parent_id in dst_idmap:
+                        # parent is already in the destination soundbank
+                        up_parent = dst_hirc[dst_idmap[up_parent_id]]
+                    else:
+                        # parent still has to be transferred
+                        up_parent = deepcopy(src_hirc[src_idmap[up_parent_id]])
+                        # TODO tis a copy, we have to add it somewhere
+                        children = get_body(up_parent)["children"]
+                        children["items"] = []
+
+                    add_children(up_parent, up_id)
+
+            # No part of the hierarchy exists in the destination soundbank yet, place everything
+            # after the first RandomSequenceContainer we find
+            if obj_transfer_idx < 0:
                 for idx, obj in enumerate(dst_hirc):
-                    obj_type = next(iter(obj["body"].keys()))
+                    obj_type = get_node_type(obj)
                     if obj_type == "RandomSequenceContainer":
                         obj_transfer_idx = idx + 1
                         break
-
-                print(
-                    f"Copying ActorMixer {actor_mixer_id} and {len(transfer_object_indices) - 1} nodes"
-                )
-
-            # Add the hierarchy we're about to insert to the destination's ActorMixer's children
-            dst_am_children: list = dst_actor_mixer["body"]["ActorMixer"]["children"]
-            dst_am_children_items = dst_am_children.setdefault("items", [])
-            dst_am_children_items.append(root_id)
-            dst_am_children_items.sort()
 
             # Shouldn't be required if everything works as expected
             unique_indices = set(transfer_object_indices)
@@ -315,7 +416,7 @@ def main(
                 duplicates = [
                     idx for idx in unique_indices if transfer_object_indices.count(idx) > 1
                 ]
-                print(f"Warning: found duplicate indices {duplicates}")
+                print(f"WARNING: found duplicate indices {duplicates}")
 
                 # The power of ordered dicts, right at my fingertips *_*
                 transfer_object_indices = list(dict.fromkeys(transfer_object_indices))
@@ -323,17 +424,17 @@ def main(
             # Transfer the objects
             for idx in transfer_object_indices:
                 obj = src_hirc[idx]
-                oid = next(iter(obj["id"].values()))
+                obj_id = get_id(obj)
 
-                if oid in dst_idmap:
+                if obj_id in dst_idmap:
                     if no_questions:
-                        print(f"Skipping already existing object {oid}")
+                        print(f"Skipping already existing object {obj_id}")
                         reply = "s"
                     else:
                         while True:
-                            obj_type = next(iter(obj["body"].keys()))
+                            obj_type = get_node_type(obj)
                             reply = input(
-                                f"Object ID {oid} ({obj_type}) already exists in target soundbank. "
+                                f"Object ID {obj_id} ({obj_type}) already exists in target soundbank. "
                                 "[s]kip, [c]ancel, [r]eplace? > "
                             )
 
@@ -348,7 +449,7 @@ def main(
                         sys.exit(-1)
                     if reply == "r":
                         # replace
-                        dst_idx = dst_idmap[oid]
+                        dst_idx = dst_idmap[obj_id]
                         dst_hirc[dst_idx] = obj
                         continue
 
@@ -359,13 +460,14 @@ def main(
                     if idx >= obj_transfer_idx:
                         dst_idmap[oid] = idx + 1
 
+                dst_idmap[obj_id] = obj_transfer_idx
                 obj_transfer_idx += 1
 
             # Now we write the play and stop events into the event section
             evt_transfer_idx = -1
             for evt_idx in dst_idmap.values():
                 evt = dst_hirc[evt_idx]
-                evt_id = str(next(iter(evt["id"].values())))
+                evt_id = str(get_id(evt))
                 if evt_id.startswith("Play_c"):
                     evt_transfer_idx = evt_idx + 1
                     break
@@ -378,18 +480,18 @@ def main(
                 elif idx == stop_evt_idx:
                     evt["id"] = { "Hash": calc_hash(f"Stop_{wwise_dst}") }
 
-                eid = next(iter(evt["id"].values()))
+                evt_id = get_id(evt)
 
-                if eid in dst_idmap:
+                if evt_id in dst_idmap:
                     if no_questions:
-                        print(f"Skipping already existing event {eid}")
+                        print(f"Skipping already existing event {evt_id}")
                         reply = "s"
                     else:
                         while True:
                             # Getting the action type is possible but more effort, so...
-                            orig_eid = next(iter(src_hirc[idx]["id"].values()))
+                            orig_eid = get_id(src_hirc[idx])
                             reply = input(
-                                f"Event ID {eid} ({orig_eid}) already exists in target soundbank. "
+                                f"Event ID {evt_id} ({orig_eid}) already exists in target soundbank. "
                                 "[s]kip, [c]ancel, [r]replace? > "
                             )
 
@@ -404,7 +506,7 @@ def main(
                         sys.exit(-1)
                     if reply == "r":
                         # replace
-                        dst_idx = dst_idmap[eid]
+                        dst_idx = dst_idmap[evt_id]
                         dst_hirc[dst_idx] = evt
                         continue
 
@@ -415,6 +517,7 @@ def main(
                     if idx >= evt_transfer_idx:
                         dst_idmap[eid] = idx + 1
 
+                dst_idmap[evt_id] = evt_transfer_idx
                 evt_transfer_idx += 1
 
     print("All hierarchies collected")
@@ -482,9 +585,9 @@ if __name__ == "__main__":
         )
         parser.add_argument(
             "sound_ids",
-            type=int,
+            type=str,
             nargs="+",
-            help="The wwise sound IDs you wish to transfer",
+            help="Specify as '<type><source-id>:=<type><destination-id>', e.g. 'c123456789:=s0987654321' (or just <type><id> if you want to copy as is)",
         )
         parser.add_argument(
             "--disable_write",
@@ -505,9 +608,22 @@ if __name__ == "__main__":
 
         src_bnk_dir = args.src_bnk
         dst_bnk_dir = args.dst_bnk
-        wwise_ids = args.sound_ids
         enable_write = not args.disable_write
         no_questions = parser.no_questions
+
+        wwise_ids = {}
+        wwise_id_check = re.compile(r"[a-z][0-9]+")
+
+        for s in args.sound_ids:
+            if ":=" in s:
+                src_id, dst_id = s.split(":=")
+            else:
+                src_id = dst_id = s
+
+            if not (re.fullmatch(wwise_id_check, src_id) and re.fullmatch(wwise_id_check, dst_id)):
+                raise ValueError(f"Invalid sound ID specification {s}")
+            
+            wwise_ids[src_id] = dst_id
 
     try:
         main(
