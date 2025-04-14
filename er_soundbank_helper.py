@@ -307,11 +307,11 @@ def main(
             upchain = deque()
             upchain_debug = []
 
-            while parent_id != 0:
+            while parent_id != 0 and parent_id in src_idmap:
                 upchain_debug.append(parent_id)
-                if parent_id in dst_idmap:
-                    # Parent chain is already in place, no need to transfer anything
-                    break
+
+                # No early exit, we want to recover the entire upwards chain. We'll handle the 
+                # parts we actually need later
 
                 # Check for loops. No clue if that ever happens, but better be safe than sorry
                 if parent_id in upchain:
