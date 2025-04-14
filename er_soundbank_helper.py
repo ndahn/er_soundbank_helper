@@ -10,6 +10,10 @@ import re
 from pprint import pprint
 
 
+# TODO
+# - there's currently a bug that sometimes results in invalid soundbanks (they pack fine though)
+
+
 # ------------------------------------------------------------------------------------------
 SRC_BNK_DIR = "../cs_c4520"
 DST_BNK_DIR = "../cs_main"
@@ -22,8 +26,13 @@ DST_BNK_DIR = "../cs_main"
 # This should make it easy to avoid collisions and allows you to keep track which IDs you've 
 # ported so far and from where.
 WWISE_IDS = {
-    "c452005011": "s445205011",
     "c452006107": "s445206107",
+    "c452006106": "s445206106",
+    "c452006102": "s445206102",
+    "c452005011": "s445205011",
+    "c452005008": "s445205008",
+    "c452005010": "s445205010",
+    "c452007001": "s445207001",
 }
 ENABLE_WRITE = True
 
@@ -296,8 +305,10 @@ def main(
             parent_id = get_parent_id(entrypoint)
 
             upchain = deque()
+            upchain_debug = []
 
             while parent_id != 0:
+                upchain_debug.append(parent_id)
                 if parent_id in dst_idmap:
                     # Parent chain is already in place, no need to transfer anything
                     break
@@ -336,13 +347,9 @@ def main(
             print()
             # pprint(debug_tree)
 
-            print("The following wems were collected:")
-            pprint(wems)
-            print()
-
             print("The parent chain consists of the following nodes:")
-            upchain_debug = [f"{key} ({get_node_type(src_hirc[src_idmap[key]])})" for key in upchain]
-            pprint(upchain_debug)
+            upchain_text = [f"{key} ({get_node_type(src_hirc[src_idmap[key]])})" for key in upchain_debug]
+            pprint(upchain_text)
             print("----------\n")
 
             # Where to insert the objects in the destination soundbank
@@ -493,6 +500,10 @@ def main(
                 evt_transfer_idx += 1
 
     print("All hierarchies collected")
+
+    print("The following wems were collected:")
+    pprint(wems)
+    print()
 
     if not enable_write:
         print(
