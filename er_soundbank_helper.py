@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+from typing import Any
 from copy import deepcopy
 import traceback
 from collections import deque
@@ -26,10 +27,13 @@ DST_BNK_DIR = "../cs_main"
 # This should make it easy to avoid collisions and allows you to keep track which IDs you've 
 # ported so far and from where.
 WWISE_IDS = {
-    "c512006630": "s451206630",
+    #"c512006630": "s451206630",
     #"c512006635": "s451206635",
+
+    "c512006006": "c512006006"
+    #"c477008001": "s447708001"
 }
-ENABLE_WRITE = True
+ENABLE_WRITE = False
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = True
@@ -159,34 +163,54 @@ def verify_soundbank(hirc: list[dict], check_indices: list[int] = None) -> list[
     discovered_ids = set([0])
     issues = []
 
-    check_indices = set(check_indices or [])
+    check_indices: set = set(check_indices or [])
+    verified_indices = set()
 
-    for idx in check_indices:
-        node = hirc[idx]
+    # We check absolutely everything!
+    def delve(item: dict | list | Any, node_id: int, path: str):
+        if isinstance(item, list):
+            for idx, value in enumerate(item):
+                delve(value, node_id, path + f"[{idx}]")
+
+        elif isinstance(item, dict):
+            for key, value in item.items():
+                delve(value, node_id, path + "/" + key)
+
+        # There's like one 5-digit hash (possibly empty string?), all others are above 10 mio
+        elif isinstance(item, int) and item >= 1000000:
+            if path.endswith("source_id"):
+                # WEMs won't appear in the HIRC
+                pass
+            
+            elif path.endswith("id/Hash"):
+                if item in discovered_ids:
+                    issues.append(f"has been defined before")
+            
+            elif path.endswith("direct_parent_id"):
+                if item in discovered_ids:
+                    issues.append(f"is defined after its parent {item}")
+            
+            elif item not in discovered_ids:
+                issues.append(f"{path}: reference {item} not found")
+
+    for idx, node in enumerate(hirc):
         id = get_id(node)
+
+        if id in discovered_ids:
+            issues.append(f"{id}: node has been defined before")
+            continue
 
         if idx not in check_indices:
             discovered_ids.add(id)
             continue
 
-        body = get_body(node)
+        delve(node, id, f"{id}: ")
 
-        if "node_base_params" in body:
-            parent = get_parent_id(node)
-            if parent in discovered_ids:
-                issues.append(f"{id}: DIRECT_PARENT_ID {parent} referenced after the parent")
-
-        if "external_id" in body:
-            ref = body["external_id"]
-            if ref not in discovered_ids:
-                issues.append(f"{id}: EXTERNAL_ID {ref} referenced before its definition")
-            
-        if "children" in body:
-            for ref in body["children"]["items"]:
-                if ref not in discovered_ids:
-                    issues.append(f"{id}: CHILD {ref} referenced before its definition")
-
+        verified_indices.add(idx)
         discovered_ids.add(id)
+
+    if check_indices and len(verified_indices) < len(check_indices):
+        issues.append(f"Expected nodes not found: {[check_indices.difference(verified_indices)]}")
 
     return issues
 
@@ -253,8 +277,8 @@ def main(
     for wwise_src, wwise_dst in wwise_map.items():
         # Find the play and stop events. The actual action comes right before the event, but
         # we could also find their ID via body/Event/actions[0] for more robustness
-        play_evt_hash = f"Play_{wwise_src}"
-        play_evt_idx = get_event_idx(play_evt_hash, src_idmap)
+        play_evt_name = f"Play_{wwise_src}"
+        play_evt_idx = get_event_idx(play_evt_name, src_idmap)
         stop_evt_idx = get_event_idx(f"Stop_{wwise_src}", src_idmap)
 
         # Indices of objects we want to transfer
@@ -377,8 +401,10 @@ def main(
                 parent = src_hirc[src_idmap[parent_id]]
                 parent_id = get_parent_id(parent)
 
-            print(f"Parsing wwise {wwise_src} resulted in the following hierarchy:")
-            print(f"\nWwise {wwise_src} ({play_evt_hash})")
+
+            play_evt_hash = calc_hash(play_evt_name)
+            print(f"Parsing wwise {wwise_src} ({play_evt_hash}) resulted in the following hierarchy:")
+            print(f"\nWwise {play_evt_name}")
             print_hierarchy(debug_tree)
             print()
             # pprint(debug_tree)
@@ -574,7 +600,9 @@ def main(
                             sys.exit(-1)
                 # If no_questions is set write anyways
         else:
-            print("Looks okay!")
+            print(" - Looks good!")
+
+        print()
 
     print("The following wems were collected:")
     pprint(wems)
@@ -582,7 +610,7 @@ def main(
 
     if not enable_write:
         print(
-            f"-> enable_write is False, no changes to the target soundbank or wems will be made"
+            f"WARNING: enable_write is False, no changes to the target soundbank or wems will be made"
         )
     else:
         if not no_questions:
