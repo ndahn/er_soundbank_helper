@@ -39,6 +39,7 @@ ENABLE_WRITE = False
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = True
 
+# TODO remove, always verify
 VERIFY = True
 # ------------------------------------------------------------------------------------------
 
@@ -271,7 +272,7 @@ def main(
                 continue
 
             # Collect the hierarchy responsible for playing the sound(s)
-            new_toi, new_wems, debug_tree = collect_action_chain(src_bnk, action_hash)
+            new_toi, new_wems, debug_tree = collect_action_chain(src_bnk, entrypoint_id)
             
             # All children will be appended left so they appear before their parents in the 
             # transfer indices list, but due to how extendleft works we need to reverse the list
@@ -281,21 +282,16 @@ def main(
             # Go up the chain to find all the parents we need
             upchain = collect_parent_chain(src_bnk, entrypoint_id)
 
-            # TODO collect additional items
-
             play_evt_hash = calc_hash(play_evt_name)
             print(f"Parsing wwise {wwise_src} ({play_evt_hash}) resulted in the following hierarchy:")
             print(f"\nWwise {play_evt_name}")
             print_hierarchy(debug_tree)
-            print()
             # pprint(debug_tree)
 
-            print("The parent chain consists of the following nodes:")
+            print("\nThe parent chain consists of the following nodes:")
             for idx, key in enumerate(reversed(upchain)):
                 node_type = get_node_type(src_bnk.hirc[src_bnk.idmap[key]])
                 print(f" ⤷ {key} ({node_type})")
-
-            print("-" * 40 + "\n")
 
             # Where to insert the objects in the destination soundbank
             obj_transfer_idx = -1
@@ -325,6 +321,17 @@ def main(
                 transfer_object_indices.append(up_idx)
                 up_child_id = up_id
 
+            # collect additional items
+            extras = collect_extras(src_bnk, transfer_object_indices)
+            transfer_object_indices.extendleft(src_bnk.idmap[id] for id in extras)
+
+            if extras:
+                print("\nThe following extra items were collected:")
+                for node_id in extras:
+                    node = src_bnk.hirc[src_bnk.idmap[node_id]]
+                    print(f" - {node_id} ({get_node_type(node)})")
+                print()
+
             # No part of the hierarchy exists in the destination soundbank yet, place everything
             # after the first RandomSequenceContainer we find
             if obj_transfer_idx < 0:
@@ -350,12 +357,14 @@ def main(
 
             transferred_events = transfer_events(src_bnk, dst_bnk, transfer_event_indices, evt_transfer_idx, wwise_src, wwise_dst)
             transferred_indices.extend(transferred_events)
+            
+            print("-" * 40 + "\n")
 
-    print("\nAll hierarchies collected")
+    print("All hierarchies collected")
 
     if verify:
         print("Verifying soundbank...")
-        issues = verify_soundbank(dst_bnk.hirc, transferred_indices)
+        issues = verify_soundbank(dst_bnk, transferred_indices)
         if issues:
             for issue in issues:
                 print(f" - {issue}")
@@ -467,6 +476,8 @@ def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
                 child_idx = bnk.idmap[child_id]
                 todo.append((child_idx, debug_children))
 
+    return transfer_object_indices, wems, debug_tree
+
 
 def collect_parent_chain(bnk: Soundbank, entrypoint_id: int) -> deque:
     entrypoint = bnk.hirc[bnk.idmap[entrypoint_id]]
@@ -507,6 +518,45 @@ def collect_parent_chain(bnk: Soundbank, entrypoint_id: int) -> deque:
         parent_id = get_parent_id(parent)
 
     return upchain
+
+
+def collect_extras(bnk: Soundbank, transfer_object_indices: list[int]):
+    extras = []
+
+    def delve(item: Any, field: str, new_ids: set):
+        if field in ["source_id", "direct_parent_id", "children"]:
+            return
+        
+        if isinstance(item, list):
+            for i, subnode in enumerate(item):
+                delve(subnode, f"{field}[{i}]", new_ids)
+
+        elif isinstance(item, dict):
+            for key, val in item.items():
+                delve(val, key, new_ids)
+
+        elif isinstance(item, int):
+            if item in bnk.idmap and bnk.idmap[item] not in transfer_object_indices:
+                new_ids.add(item)
+
+    for idx in transfer_object_indices:
+        todo = deque([get_id(bnk.hirc[idx])])
+
+        while todo:
+            node_id = todo.pop()
+            node = bnk.hirc[bnk.idmap[node_id]]
+            body = get_body(node)
+
+            new_ids = set()
+            delve(body, "body", new_ids)
+
+            for id in new_ids.difference(extras):
+                todo.append(id)
+                # Will contain the highest parents in the beginning (to the left) and deeper 
+                # children towards the end (right)
+                extras.append(id)
+
+    return extras
 
 
 def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_indices: list[int], obj_transfer_idx: int):
