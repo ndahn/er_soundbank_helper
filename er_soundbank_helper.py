@@ -15,7 +15,7 @@ from pprint import pprint
 
 
 # ------------------------------------------------------------------------------------------
-SRC_BNK_DIR = "../cs_c4520"
+SRC_BNK_DIR = "../cs_c5120"
 DST_BNK_DIR = "../cs_main"
 
 # NPC sounds are usually named <npc-id>0<sound-id>. When moving npc sounds to the player, I 
@@ -26,18 +26,15 @@ DST_BNK_DIR = "../cs_main"
 # This should make it easy to avoid collisions and allows you to keep track which IDs you've 
 # ported so far and from where.
 WWISE_IDS = {
-    "c452006107": "s445206107",
-    "c452006106": "s445206106",
-    "c452006102": "s445206102",
-    "c452005011": "s445205011",
-    "c452005008": "s445205008",
-    "c452005010": "s445205010",
-    "c452007001": "s445207001",
+    "c512006630": "s451206630",
+    #"c512006635": "s451206635",
 }
 ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
-NO_QUESTIONS = False
+NO_QUESTIONS = True
+
+VERIFY = True
 # ------------------------------------------------------------------------------------------
 
 
@@ -62,18 +59,21 @@ def calc_hash(input: str) -> int:
 
 def load_indices(
     bnk: dict,
-) -> tuple[list[dict], dict[int, int]]:
+) -> tuple[list[dict], dict[int, int], int]:
     sections = bnk.get("sections", None)
 
     if not sections:
         raise ValueError("Could not find 'sections' in bnk")
 
     for sec in sections:
-        if "HIRC" in sec["body"]:
-            hirc: list[dict] = sec["body"]["HIRC"]["objects"]
-            break
-    else:
-        raise ValueError("Could not find HIRC in bnk")
+        body = sec["body"]
+
+        if "BKHD" in body:
+            bnk_id = body["BKHD"]["bank_id"]
+        elif "HIRC" in body:
+            hirc: list[dict] = body["HIRC"]["objects"]
+        else:
+            pass
 
     id_map = {}
     for idx, obj in enumerate(hirc):
@@ -90,7 +90,7 @@ def load_indices(
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
-    return hirc, id_map
+    return hirc, id_map, bnk_id
 
 
 def print_hierarchy(debug_tree: list, prefix: str = ""):
@@ -155,6 +155,41 @@ def add_children(node: dict, *new_item_ids: int):
     children["items"] = sorted(list(set(items)))
 
 
+def verify_soundbank(hirc: list[dict], check_indices: list[int] = None) -> list[str]:
+    discovered_ids = set([0])
+    issues = []
+
+    check_indices = set(check_indices or [])
+
+    for idx in check_indices:
+        node = hirc[idx]
+        id = get_id(node)
+
+        if idx not in check_indices:
+            discovered_ids.add(id)
+            continue
+
+        body = get_body(node)
+
+        if "node_base_params" in body:
+            parent = get_parent_id(node)
+            if parent in discovered_ids:
+                issues.append(f"{id}: DIRECT_PARENT_ID {parent} referenced after the parent")
+
+        if "external_id" in body:
+            ref = body["external_id"]
+            if ref not in discovered_ids:
+                issues.append(f"{id}: EXTERNAL_ID {ref} referenced before its definition")
+            
+        if "children" in body:
+            for ref in body["children"]["items"]:
+                if ref not in discovered_ids:
+                    issues.append(f"{id}: CHILD {ref} referenced before its definition")
+
+        discovered_ids.add(id)
+
+    return issues
+
 def main(
     src_bnk_dir: str,
     dst_bnk_dir: str,
@@ -162,6 +197,7 @@ def main(
     *,
     enable_write: bool = True,
     no_questions: bool = False,
+    verify: bool = True,
 ):
     # Check the IDs before we start the heavy work
     wwise_id_check = re.compile(r"[acfopsmvxbiyzegd][0-9]{9}")
@@ -208,8 +244,8 @@ def main(
     with dst_json.open() as f:
         dst_bnk: dict = json.load(f)
 
-    src_hirc, src_idmap = load_indices(src_bnk)
-    dst_hirc, dst_idmap = load_indices(dst_bnk)
+    src_hirc, src_idmap, src_bnk_id = load_indices(src_bnk)
+    dst_hirc, dst_idmap, dst_bnk_id = load_indices(dst_bnk)
     wems = []
 
     # Now we begin
@@ -348,9 +384,11 @@ def main(
             # pprint(debug_tree)
 
             print("The parent chain consists of the following nodes:")
-            upchain_text = [f"{key} ({get_node_type(src_hirc[src_idmap[key]])})" for key in upchain_debug]
-            pprint(upchain_text)
-            print("----------\n")
+            for idx, key in enumerate(reversed(upchain_debug)):
+                node_type = get_node_type(src_hirc[src_idmap[key]])
+                print(f" ⤷ {key} ({node_type})")
+
+            print("-" * 40 + "\n")
 
             # Where to insert the objects in the destination soundbank
             obj_transfer_idx = -1
@@ -401,6 +439,8 @@ def main(
                 transfer_object_indices = list(dict.fromkeys(transfer_object_indices))
 
             # Transfer the objects
+            transferred_indices = []
+
             for idx in transfer_object_indices:
                 obj = src_hirc[idx]
                 obj_id = get_id(obj)
@@ -433,6 +473,7 @@ def main(
                         continue
 
                 dst_hirc.insert(obj_transfer_idx, obj)
+                transferred_indices.append(obj_transfer_idx)
 
                 # Since we have inserted something, all subsequent indices will be offset
                 for oid, idx in dst_idmap.items():
@@ -489,7 +530,23 @@ def main(
                         dst_hirc[dst_idx] = evt
                         continue
 
+                # Some actions make references to other soundbanks or even their own
+                if get_node_type(evt) == "Action":
+                    body = get_body(evt)
+                    params = body.get("params", None)
+                    if params:
+                        for subnode in params.values():
+                            if "bank_id" in subnode:
+                                orig_bnk_id = subnode["bank_id"]
+                                if orig_bnk_id == src_bnk_id:
+                                    # NOTE: If we want to use other soundbanks we'd probably have to add them in the STID
+                                    subnode["bank_id"] = dst_bnk_id
+                                else:
+                                    print(f"WARNING: action {evt_id} references external soundbank {orig_bnk_id}. "
+                                          f"If this sound(bank) doesn't work, try setting this action's bank_id to {dst_bnk_id}")
+
                 dst_hirc.insert(evt_transfer_idx, evt)
+                transferred_indices.append(evt_transfer_idx)
 
                 # Since we have inserted something, all subsequent indices will be offset
                 for eid, idx in dst_idmap.items():
@@ -499,7 +556,25 @@ def main(
                 dst_idmap[evt_id] = evt_transfer_idx
                 evt_transfer_idx += 1
 
-    print("All hierarchies collected")
+    print("\nAll hierarchies collected")
+
+    if verify:
+        print("Verifying soundbank...")
+        issues = verify_soundbank(dst_hirc, transferred_indices)
+        if issues:
+            for issue in issues:
+                print(f" - {issue}")
+                if not no_questions:
+                    while True:
+                        reply = input("Continue anyways? [y/n] > ")
+
+                        if reply == "y":
+                            break
+                        if reply == "n":
+                            sys.exit(-1)
+                # If no_questions is set write anyways
+        else:
+            print("Looks okay!")
 
     print("The following wems were collected:")
     pprint(wems)
@@ -543,7 +618,8 @@ def main(
 
     print("\nDone! The following wwise play events were registered:")
     for wwise_src, wwise_dst in wwise_map.items():
-        print(f" - {wwise_src} -> {wwise_dst} ({calc_hash(wwise_dst)})")
+        dst_hash = calc_hash(f"Play_{wwise_dst}")
+        print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
 
     input("\nNext, repack your target soundbank. Press Enter to exit...")
 
@@ -555,6 +631,7 @@ if __name__ == "__main__":
         wwise_ids = WWISE_IDS
         enable_write = ENABLE_WRITE
         no_questions = NO_QUESTIONS
+        verify = VERIFY
     else:
         import argparse
 
@@ -582,6 +659,11 @@ if __name__ == "__main__":
             action="store_true",
             help="Assume sensible defaults instead of asking for confirmations",
         )
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            help="Verify the resulting soundbank before writing",
+        )
 
         args = parser.parse_args()
 
@@ -592,7 +674,8 @@ if __name__ == "__main__":
         src_bnk_dir = args.src_bnk
         dst_bnk_dir = args.dst_bnk
         enable_write = not args.disable_write
-        no_questions = parser.no_questions
+        no_questions = args.no_questions
+        verify = args.verify
 
         wwise_ids = {}
         wwise_id_check = re.compile(r"[a-z][0-9]+")
@@ -615,6 +698,7 @@ if __name__ == "__main__":
             wwise_ids,
             enable_write=enable_write,
             no_questions=no_questions,
+            verify=verify,
         )
     except Exception as e:
         if hasattr(sys, "gettrace") and sys.gettrace() is not None:
