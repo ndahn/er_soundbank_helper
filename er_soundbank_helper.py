@@ -17,7 +17,7 @@ from pprint import pprint
 
 
 # ------------------------------------------------------------------------------------------
-SRC_BNK_DIR = "../cs_c5120"
+SRC_BNK_DIR = "../cs_c2010"
 DST_BNK_DIR = "../cs_main"
 
 # NPC sounds are usually named <npc-id>0<sound-id>. When moving npc sounds to the player, I 
@@ -28,16 +28,12 @@ DST_BNK_DIR = "../cs_main"
 # This should make it easy to avoid collisions and allows you to keep track which IDs you've 
 # ported so far and from where.
 WWISE_IDS = {
-    "c512006630": "s451206630",
-    #"c512006635": "s451206635",
-
-    #"c512006006": "c512006006"
-    #"c477008001": "s447708001"
+"c201005002": "s420105002"
 }
 ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
-NO_QUESTIONS = False
+NO_QUESTIONS = True
 # ------------------------------------------------------------------------------------------
 
 
@@ -395,7 +391,7 @@ def main(
             elif reply == "n":
                 sys.exit(0)
         
-        write_soundbank(dst_bnk, wems)
+        write_soundbank(src_bnk, dst_bnk, wems)
         print("\nDone! The following wwise play events were registered:")
         for wwise_src, wwise_dst in wwise_map.items():
             dst_hash = calc_hash(f"Play_{wwise_dst}")
@@ -619,7 +615,7 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
         if get_node_type(evt) == "Action":
             body = get_body(evt)
             params = body.get("params", None)
-            if params:
+            if isinstance(params, dict):
                 for subnode in params.values():
                     if "bank_id" in subnode:
                         orig_bnk_id = subnode["bank_id"]
@@ -685,7 +681,7 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
                 if exists:
                     issues.append(f"{path}: reference {item} was not transferred")
                 else:
-                    issues.append(f"{path}: reference {item} does not exist")
+                    issues.append(f"{path}: reference {item} does not exist (probably okay?)")
 
     for idx, node in enumerate(dst_bnk.hirc):
         id = get_id(node)
@@ -709,30 +705,30 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
     return issues
 
 
-def write_soundbank(bnk: Soundbank, wems: list[int]):
-    print(f"Writing destination soundbank ({len(bnk.hirc)} nodes)")
+def write_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, wems: list[int]):
+    print(f"Writing destination soundbank ({len(dst_bnk.hirc)} nodes)")
     # Replace the original hirc in the destination soundbank
-    dst_sections = bnk.json["sections"]
+    dst_sections = dst_bnk.json["sections"]
     for idx, sec in enumerate(dst_sections):
         if "HIRC" in sec["body"]:
-            sec["body"]["HIRC"]["objects"] = bnk.hirc
+            sec["body"]["HIRC"]["objects"] = dst_bnk.hirc
             break
 
-    bnk_json_path = bnk.bnk_dir / "soundbank.json"
+    bnk_json_path = dst_bnk.bnk_dir / "soundbank.json"
 
-    backup = bnk.bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
-    shutil.move(bnk_json_path, bnk.bnk_dir.parent / backup)
+    backup = dst_bnk.bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
+    shutil.move(bnk_json_path, dst_bnk.bnk_dir.parent / backup)
     with bnk_json_path.open("w") as f:
-        json.dump(bnk.json, f, indent=2)
+        json.dump(dst_bnk.json, f, indent=2)
 
     print(f"Copying {len(wems)} wems")
     for wem in wems:
         wem_name = f"{wem}.wem"
-        if (bnk.bnk_dir / wem_name).is_file():
+        if (dst_bnk.bnk_dir / wem_name).is_file():
             #print(f"wem {wem_name} already exists, skipping")
             pass
         else:
-            shutil.copy(src_bnk_dir / wem_name, bnk.bnk_dir / wem_name)
+            shutil.copy(src_bnk.bnk_dir / wem_name, dst_bnk.bnk_dir / wem_name)
 
 
 if __name__ == "__main__":
