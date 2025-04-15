@@ -28,21 +28,23 @@ DST_BNK_DIR = "../cs_main"
 # This should make it easy to avoid collisions and allows you to keep track which IDs you've 
 # ported so far and from where.
 WWISE_IDS = {
-    #"c512006630": "s451206630",
+    "c512006630": "s451206630",
     #"c512006635": "s451206635",
 
-    "c512006006": "c512006006"
+    #"c512006006": "c512006006"
     #"c477008001": "s447708001"
 }
-ENABLE_WRITE = False
+ENABLE_WRITE = True
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
-NO_QUESTIONS = True
+NO_QUESTIONS = False
 # ------------------------------------------------------------------------------------------
 
 
 @dataclass
 class Soundbank:
+    bnk_dir: Path
+    json: str
     id: int
     hirc: list[dict]
     idmap: dict[int, int]
@@ -67,7 +69,19 @@ def calc_hash(input: str) -> int:
     return result
 
 
-def load_indices(bnk_json: dict) -> Soundbank:
+def load_soundbank(bnk_dir: str) -> Soundbank:
+    # Resolve the path to the unpacked soundbank
+    bnk_dir: Path = Path(bnk_dir)
+    if not bnk_dir.is_absolute():
+        bnk_dir = Path(__file__).resolve().parent / bnk_dir
+    
+    bnk_dir = bnk_dir.resolve()
+
+    json_path = bnk_dir / "soundbank.json"
+    with json_path.open() as f:
+        bnk_json: dict = json.load(f)
+
+    # Read the sections
     sections = bnk_json.get("sections", None)
 
     if not sections:
@@ -83,6 +97,7 @@ def load_indices(bnk_json: dict) -> Soundbank:
         else:
             pass
 
+    # A helper dict for mapping object IDs to HIRC indices
     idmap = {}
     for idx, obj in enumerate(hirc):
         idsec = obj["id"]
@@ -98,7 +113,7 @@ def load_indices(bnk_json: dict) -> Soundbank:
         else:
             print(f"Don't know how to handle object with id {idsec}")
 
-    return Soundbank(bnk_id, hirc, idmap)
+    return Soundbank(bnk_dir, bnk_json, bnk_id, hirc, idmap)
 
 
 def print_hierarchy(debug_tree: list, prefix: str = ""):
@@ -145,6 +160,21 @@ def get_body(node: dict) -> dict:
 def get_parent_id(node: dict) -> int:
     body = get_body(node)
     return body["node_base_params"]["direct_parent_id"]
+
+
+def get_user_reply(query: str, valid: str | list) -> str:
+    if isinstance(valid, list):
+        valid = "".join(s[0] for s in valid)
+        choices = ", ".join([f"[{s[0]}]" for s in valid])
+    else:
+        choices = "/".join(valid)
+
+    q = f"{query} [{choices}] > "
+    
+    while True:
+        reply = input(q)
+        if reply in valid:
+            return reply
 
 
 def add_children(node: dict, *new_item_ids: int):
@@ -194,30 +224,12 @@ def main(
     wwise_map = verified_wwise_map
 
     # Load the soundbanks and prepare some lookup tables
-    src_bnk_dir: Path = Path(src_bnk_dir)
-    dst_bnk_dir: Path = Path(dst_bnk_dir)
-
-    if not src_bnk_dir.is_absolute():
-        src_bnk_dir = Path(__file__).resolve().parent / src_bnk_dir
-
-    if not dst_bnk_dir.is_absolute():
-        dst_bnk_dir = Path(__file__).resolve().parent / dst_bnk_dir
-
-    src_bnk_dir = src_bnk_dir.resolve()
-    dst_bnk_dir = dst_bnk_dir.resolve()
-
     print("Loading source soundbank")
-    src_json = src_bnk_dir / "soundbank.json"
-    with src_json.open() as f:
-        src_bnk_json: dict = json.load(f)
+    src_bnk = load_soundbank(src_bnk_dir)
 
     print("Loading destination soundbank")
-    dst_json = dst_bnk_dir / "soundbank.json"
-    with dst_json.open() as f:
-        dst_bnk_json: dict = json.load(f)
-
-    src_bnk = load_indices(src_bnk_json)
-    dst_bnk = load_indices(dst_bnk_json)
+    dst_bnk = load_soundbank(dst_bnk_dir)
+    
     wems = []
 
     # Now we begin
@@ -271,8 +283,8 @@ def main(
             new_toi, new_wems, debug_tree = collect_action_chain(src_bnk, entrypoint_id)
             
             # All children will be appended left so they appear before their parents in the 
-            # transfer indices list, but due to how extendleft works we need to reverse the list
-            transfer_object_indices.extendleft(reversed(new_toi))
+            # transfer indices list
+            transfer_object_indices.extendleft(new_toi)
             wems.extend(new_wems)
 
             # Go up the chain to find all the parents we need
@@ -356,27 +368,18 @@ def main(
             
             print("-" * 40 + "\n")
 
-    print("All hierarchies collected")
+    print("All hierarchies collected")    
+    print("\nFound the following WEMs:")
+    pprint(wems)
 
-    print("Verifying soundbank...")
-    issues = verify_soundbank(dst_bnk, transferred_indices)
+    print("\nVerifying soundbank...")
+    issues = verify_soundbank(src_bnk, dst_bnk, transferred_indices)
     if issues:
         for issue in issues:
             print(f" - {issue}")
-            if not no_questions:
-                while True:
-                    reply = input("Continue anyways? [y/n] > ")
-
-                    if reply == "y":
-                        break
-                    if reply == "n":
-                        sys.exit(-1)
-            # If no_questions is set write anyways
     else:
         print(" - Looks good!")
 
-    print("\nThe following wems were collected:")
-    pprint(wems)
     print()
 
     if not enable_write:
@@ -385,43 +388,20 @@ def main(
         )
     else:
         if not no_questions:
-            reply = ""
-            while not reply or reply not in "yn":
-                reply = input("Write to destination? [y/n] > ")
-
+            reply = get_user_reply("Write to destination?", "yn")
+            
             if reply == "y":
                 pass
-            else:
+            elif reply == "n":
                 sys.exit(0)
+        
+        write_soundbank(dst_bnk, wems)
+        print("\nDone! The following wwise play events were registered:")
+        for wwise_src, wwise_dst in wwise_map.items():
+            dst_hash = calc_hash(f"Play_{wwise_dst}")
+            print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
 
-        print(f"Writing destination soundbank ({len(dst_bnk.hirc)} nodes)")
-        # Replace the original hirc in the destination soundbank
-        dst_sections = dst_bnk_json["sections"]
-        for idx, sec in enumerate(dst_sections):
-            if "HIRC" in sec["body"]:
-                sec["body"]["HIRC"]["objects"] = dst_bnk.hirc
-                break
-
-        backup = dst_bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
-        shutil.move(dst_json, dst_bnk_dir.parent / backup)
-        with dst_json.open("w") as f:
-            json.dump(dst_bnk_json, f, indent=2)
-
-        print(f"Copying {len(wems)} wems")
-        for wem in wems:
-            wem_name = f"{wem}.wem"
-            if (dst_bnk_dir / wem_name).is_file():
-                #print(f"wem {wem_name} already exists, skipping")
-                pass
-            else:
-                shutil.copy(src_bnk_dir / wem_name, dst_bnk_dir / wem_name)
-
-    print("\nDone! The following wwise play events were registered:")
-    for wwise_src, wwise_dst in wwise_map.items():
-        dst_hash = calc_hash(f"Play_{wwise_dst}")
-        print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
-
-    input("\nNext, repack your target soundbank. Press Enter to exit...")
+    print("\nNext, repack your target soundbank and place it in sd/enus.")
 
 
 def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
@@ -440,8 +420,8 @@ def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
         if node_idx in visited:
             return
 
-        # All children will be appended left so they appear before their
-        # parents in the transfer indices list
+        # Will contain the highest parents in the beginning (to the left) and deeper children 
+        # towards the end (right)
         transfer_object_indices.append(node_idx)
         visited.add(node_idx)
 
@@ -495,16 +475,11 @@ def collect_parent_chain(bnk: Soundbank, entrypoint_id: int) -> deque:
             
             print(f"{debug_parent} -> {parent_id}")
 
-            while True:
-                reply = input("Continue? [y/n] > ")
-
-                if reply == "y":
-                    break
-
-                if reply == "n":
-                    sys.exit(1)
-
-            break
+            reply = get_user_reply("Continue?", "yn")
+            if reply == "y":
+                break
+            elif reply == "n":
+                sys.exit(1)
 
         # Children before parents
         upchain.append(parent_id)
@@ -565,15 +540,11 @@ def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_ind
                 print(f"Skipping already existing object {obj_id} ({get_node_type(obj)})")
                 reply = "s"
             else:
-                while True:
-                    obj_type = get_node_type(obj)
-                    reply = input(
-                        f"Object ID {obj_id} ({obj_type}) already exists in target soundbank. "
-                        "[s]kip, [c]ancel, [r]eplace? > "
-                    )
-
-                    if reply in "scr":
-                        break
+                obj_type = get_node_type(obj)
+                reply = get_user_reply(
+                    f"Object ID {obj_id} ({obj_type}) already exists in target soundbank.",
+                    ["skip", "cancel", "replace"]
+                )
 
             if reply == "s":
                 # skip
@@ -625,16 +596,12 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
                 print(f"Skipping already existing event {evt_id} ({get_node_type(evt)})")
                 reply = "s"
             else:
-                while True:
-                    # Getting the action type is possible but more effort, so...
-                    orig_eid = get_id(src_bnk.hirc[idx])
-                    reply = input(
-                        f"Event ID {evt_id} ({orig_eid}) already exists in target soundbank. "
-                        "[s]kip, [c]ancel, [r]replace? > "
-                    )
-
-                    if reply in "scr":
-                        break
+                # Getting the action type is possible but more effort, so...
+                orig_eid = get_id(src_bnk.hirc[idx])
+                reply = get_user_reply(
+                    f"Event ID {evt_id} ({orig_eid}) already exists in target soundbank.",
+                    ["skip", "cancel", "replace"]
+                )
 
             if reply == "s":
                 # skip
@@ -677,8 +644,7 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
     return transferred_indices
 
 
-
-def verify_soundbank(bnk: Soundbank, check_indices: list[int] = None) -> list[str]:
+def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list[int] = None) -> list[str]:
     discovered_ids = set([0])
     issues = []
 
@@ -700,19 +666,28 @@ def verify_soundbank(bnk: Soundbank, check_indices: list[int] = None) -> list[st
             if path.endswith("source_id"):
                 # WEMs won't appear in the HIRC
                 pass
+
+            elif path.endswith("bank_id"):
+                if item != dst_bnk.id:
+                    # Not sure if this can be an issue
+                    issues.append(f"reference to external soundbank {item}")
             
             elif path.endswith("id/Hash"):
                 if item in discovered_ids:
-                    issues.append(f"has been defined before")
+                    issues.append(f"has duplicates")
             
             elif path.endswith("direct_parent_id"):
                 if item in discovered_ids:
                     issues.append(f"is defined after its parent {item}")
             
             elif item not in discovered_ids:
-                issues.append(f"{path}: reference {item} not found")
+                exists = (item in src_bnk.hirc)
+                if exists:
+                    issues.append(f"{path}: reference {item} was not transferred")
+                else:
+                    issues.append(f"{path}: reference {item} does not exist")
 
-    for idx, node in enumerate(bnk.hirc):
+    for idx, node in enumerate(dst_bnk.hirc):
         id = get_id(node)
 
         if id in discovered_ids:
@@ -723,7 +698,7 @@ def verify_soundbank(bnk: Soundbank, check_indices: list[int] = None) -> list[st
             discovered_ids.add(id)
             continue
 
-        delve(node, id, f"{id}: ")
+        delve(get_body(node), id, f"{id}: ")
 
         verified_indices.add(idx)
         discovered_ids.add(id)
@@ -732,6 +707,32 @@ def verify_soundbank(bnk: Soundbank, check_indices: list[int] = None) -> list[st
         issues.append(f"Expected nodes not found: {[check_indices.difference(verified_indices)]}")
 
     return issues
+
+
+def write_soundbank(bnk: Soundbank, wems: list[int]):
+    print(f"Writing destination soundbank ({len(bnk.hirc)} nodes)")
+    # Replace the original hirc in the destination soundbank
+    dst_sections = bnk.json["sections"]
+    for idx, sec in enumerate(dst_sections):
+        if "HIRC" in sec["body"]:
+            sec["body"]["HIRC"]["objects"] = bnk.hirc
+            break
+
+    bnk_json_path = bnk.bnk_dir / "soundbank.json"
+
+    backup = bnk.bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
+    shutil.move(bnk_json_path, bnk.bnk_dir.parent / backup)
+    with bnk_json_path.open("w") as f:
+        json.dump(bnk.json, f, indent=2)
+
+    print(f"Copying {len(wems)} wems")
+    for wem in wems:
+        wem_name = f"{wem}.wem"
+        if (bnk.bnk_dir / wem_name).is_file():
+            #print(f"wem {wem_name} already exists, skipping")
+            pass
+        else:
+            shutil.copy(src_bnk_dir / wem_name, bnk.bnk_dir / wem_name)
 
 
 if __name__ == "__main__":
@@ -809,4 +810,5 @@ if __name__ == "__main__":
 
         # In case we are run from a temporary terminal, otherwise we won't see what's wrong
         print(traceback.format_exc())
-        input("\nPress enter to exit")
+    
+    input("Press enter to exit...")
