@@ -38,9 +38,6 @@ ENABLE_WRITE = False
 
 # If True, don't ask for confirmation: skip existing entries in the destination and write once ready
 NO_QUESTIONS = True
-
-# TODO remove, always verify
-VERIFY = True
 # ------------------------------------------------------------------------------------------
 
 
@@ -173,7 +170,6 @@ def main(
     *,
     enable_write: bool = True,
     no_questions: bool = False,
-    verify: bool = True,
 ):
     # Check the IDs before we start the heavy work
     wwise_id_check = re.compile(r"[acfopsmvxbiyzegd][0-9]{9}")
@@ -362,27 +358,24 @@ def main(
 
     print("All hierarchies collected")
 
-    if verify:
-        print("Verifying soundbank...")
-        issues = verify_soundbank(dst_bnk, transferred_indices)
-        if issues:
-            for issue in issues:
-                print(f" - {issue}")
-                if not no_questions:
-                    while True:
-                        reply = input("Continue anyways? [y/n] > ")
+    print("Verifying soundbank...")
+    issues = verify_soundbank(dst_bnk, transferred_indices)
+    if issues:
+        for issue in issues:
+            print(f" - {issue}")
+            if not no_questions:
+                while True:
+                    reply = input("Continue anyways? [y/n] > ")
 
-                        if reply == "y":
-                            break
-                        if reply == "n":
-                            sys.exit(-1)
-                # If no_questions is set write anyways
-        else:
-            print(" - Looks good!")
+                    if reply == "y":
+                        break
+                    if reply == "n":
+                        sys.exit(-1)
+            # If no_questions is set write anyways
+    else:
+        print(" - Looks good!")
 
-        print()
-
-    print("The following wems were collected:")
+    print("\nThe following wems were collected:")
     pprint(wems)
     print()
 
@@ -418,7 +411,8 @@ def main(
         for wem in wems:
             wem_name = f"{wem}.wem"
             if (dst_bnk_dir / wem_name).is_file():
-                print(f"wem {wem_name} already exists, skipping")
+                #print(f"wem {wem_name} already exists, skipping")
+                pass
             else:
                 shutil.copy(src_bnk_dir / wem_name, dst_bnk_dir / wem_name)
 
@@ -568,7 +562,7 @@ def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_ind
 
         if obj_id in dst_bnk.idmap:
             if no_questions:
-                print(f"Skipping already existing object {obj_id}")
+                print(f"Skipping already existing object {obj_id} ({get_node_type(obj)})")
                 reply = "s"
             else:
                 while True:
@@ -628,7 +622,7 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
 
         if evt_id in dst_bnk.idmap or (isinstance(evt_id, str) and calc_hash(evt_id) in dst_bnk.idmap):
             if no_questions:
-                print(f"Skipping already existing event {evt_id}")
+                print(f"Skipping already existing event {evt_id} ({get_node_type(evt)})")
                 reply = "s"
             else:
                 while True:
@@ -747,7 +741,6 @@ if __name__ == "__main__":
         wwise_ids = WWISE_IDS
         enable_write = ENABLE_WRITE
         no_questions = NO_QUESTIONS
-        verify = VERIFY
     else:
         import argparse
 
@@ -775,11 +768,6 @@ if __name__ == "__main__":
             action="store_true",
             help="Assume sensible defaults instead of asking for confirmations",
         )
-        parser.add_argument(
-            "--verify",
-            action="store_true",
-            help="Verify the resulting soundbank before writing",
-        )
 
         args = parser.parse_args()
 
@@ -791,7 +779,6 @@ if __name__ == "__main__":
         dst_bnk_dir = args.dst_bnk
         enable_write = not args.disable_write
         no_questions = args.no_questions
-        verify = args.verify
 
         wwise_ids = {}
         wwise_id_check = re.compile(r"[a-z][0-9]+")
@@ -814,7 +801,6 @@ if __name__ == "__main__":
             wwise_ids,
             enable_write=enable_write,
             no_questions=no_questions,
-            verify=verify,
         )
     except Exception as e:
         if hasattr(sys, "gettrace") and sys.gettrace() is not None:
