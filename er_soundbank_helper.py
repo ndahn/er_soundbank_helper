@@ -47,7 +47,7 @@ class Soundbank:
     json: str
     id: int
     hirc: list[dict]
-    idmap: dict[int, int]
+    idmap: dict[int, int]  # ID (or hash) to HIRC index
 
 
 def calc_hash(input: str) -> int:
@@ -733,24 +733,22 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
 
     for idx, node in enumerate(dst_bnk.hirc):
         id = get_id(node)
+        discovered_ids.add(id)
 
         if id in discovered_ids:
             issues.append(f"{id}: node has been defined before")
             continue
 
         if idx not in check_indices:
-            discovered_ids.add(id)
             continue
 
         delve(get_body(node), id, f"{id}: ")
-
-        verified_indices.add(idx)
 
         # References to other objects will always be by hash
         if isinstance(id, str):
             id = calc_hash(id)
 
-        discovered_ids.add(id)
+        verified_indices.add(idx)
 
     if check_indices and len(verified_indices) < len(check_indices):
         issues.append(f"Expected nodes not found: {[check_indices.difference(verified_indices)]}")
