@@ -12,28 +12,32 @@ import re
 from pprint import pprint
 
 
-# TODO
-# - there's currently a bug that sometimes results in invalid soundbanks (they pack fine though)
-
-
 # ------------------------------------------------------------------------------------------
-SRC_BNK_DIR = "../cs_c2010"
+# Set these paths so they point to your extracted source and destination soundbanks.
+SRC_BNK_DIR = "../cs_c5120"
 DST_BNK_DIR = "../cs_main"
 
-# NPC sounds are usually named <npc-id>0<sound-id>. When moving npc sounds to the player, I 
+# NPC sounds are usually named "c<npc-id>0<sound-id>". When moving npc sounds to the player, I 
 # recommend renaming them as follows. 
-#
-#     4<npc-id><sound-id>
-#
-# This should make it easy to avoid collisions and allows you to keep track which IDs you've 
+# 
+#     <soundtype>4<npc-id><sound-id>
+# 
+# This should make it easy to avoid collisions and allows you to keep track of which IDs you've 
 # ported so far and from where.
+# 
+# The soundtype has (afaik) no meaning other than being used for calculating the event hashes, so
+# you should be able to use whatever you like from this list:
+# 
 WWISE_IDS = {
-"c201005002": "s420105002"
+    "c512006630": "s451206630",
+    "c512006635": "s451206635",
 }
+
+# Enables writing to the destination.
 ENABLE_WRITE = True
 
-# If True, don't ask for confirmation: skip existing entries in the destination and write once ready
-NO_QUESTIONS = True
+# If True, don't ask for confirmation: make reasonable assumptions and write once ready
+NO_QUESTIONS = False
 # ------------------------------------------------------------------------------------------
 
 
@@ -138,7 +142,7 @@ def get_event_idx(evt_name: str, bnk: Soundbank) -> int:
     if idx is not None:
         return idx
     
-    raise ValueError(f"Could not find index for event {evt_name}")
+    raise ValueError(f"Could not find index for event {evt_name}. Did you set the correct source soundbank?")
 
 
 def get_id(node: dict) -> int:
@@ -161,11 +165,11 @@ def get_parent_id(node: dict) -> int:
 def get_user_reply(query: str, valid: str | list) -> str:
     if isinstance(valid, list):
         valid = "".join(s[0] for s in valid)
-        choices = ", ".join([f"[{s[0]}]" for s in valid])
+        choices = ", ".join([f"[{s[0]}]{s[1:]}" for s in valid])
     else:
-        choices = "/".join(valid)
+        choices = "[" + "/".join(valid) + "]"
 
-    q = f"{query} [{choices}] > "
+    q = f"{query} {choices} > "
     
     while True:
         reply = input(q)
@@ -227,6 +231,7 @@ def main(
     dst_bnk = load_soundbank(dst_bnk_dir)
     
     wems = []
+    transferred_indices = []
 
     # Now we begin
     print("Collecting sound hierarchies")
@@ -327,7 +332,6 @@ def main(
 
             # collect additional items
             extras = collect_extras(src_bnk, transfer_object_indices)
-            transfer_object_indices.extendleft(src_bnk.idmap[id] for id in extras)
 
             if extras:
                 print("\nThe following extra items were collected:")
@@ -346,7 +350,6 @@ def main(
                         break
 
             # Transfer the objects
-            transferred_indices = []
             transferred_objects = transfer_objects(src_bnk, dst_bnk, transfer_object_indices, obj_transfer_idx)
             transferred_indices.extend(transferred_objects)
 
@@ -361,6 +364,9 @@ def main(
 
             transferred_events = transfer_events(src_bnk, dst_bnk, transfer_event_indices, evt_transfer_idx, wwise_src, wwise_dst)
             transferred_indices.extend(transferred_events)
+
+            transferred_extras = transfer_extras(src_bnk, dst_bnk, extras)
+            transferred_indices.extend(transferred_extras)
             
             print("-" * 40 + "\n")
 
@@ -392,12 +398,12 @@ def main(
                 sys.exit(0)
         
         write_soundbank(src_bnk, dst_bnk, wems)
-        print("\nDone! The following wwise play events were registered:")
+        print(f"\nDone! The following wwise play events were added to {dst_bnk.bnk_dir.name}:")
         for wwise_src, wwise_dst in wwise_map.items():
             dst_hash = calc_hash(f"Play_{wwise_dst}")
             print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
 
-    print("\nNext, repack your target soundbank and place it in sd/enus.")
+    print("\nDon't forget to repack your soundbank!")
 
 
 def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
@@ -527,6 +533,10 @@ def collect_extras(bnk: Soundbank, transfer_object_indices: list[int]):
 def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_indices: list[int], obj_transfer_idx: int):
     transferred_indices = []
 
+    # The first node of the HIRC is special and needs to be protected
+    if obj_transfer_idx == 0:
+        obj_transfer_idx += 1
+
     for idx in transfer_object_indices:
         obj = src_bnk.hirc[idx]
         obj_id = get_id(obj)
@@ -570,6 +580,10 @@ def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_ind
 
 def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indices: list[int], evt_transfer_idx: int, src_wwise_id: str, dst_wwise_id: str):
     transferred_indices = []
+
+    # The first node of the HIRC is special and needs to be protected
+    if evt_transfer_idx == 0:
+        evt_transfer_idx = 1
 
     wwise_map = {
         f"Play_{src_wwise_id}": f"Play_{dst_wwise_id}",
@@ -640,6 +654,40 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
     return transferred_indices
 
 
+def transfer_extras(src_bnk: Soundbank, dst_bnk: Soundbank, extra_ids: list[int]):
+    transferred_indices = []
+
+    for id in extra_ids:
+        if id not in src_bnk.idmap:
+            continue
+
+        if id in dst_bnk.idmap:
+            continue
+
+        idx = src_bnk.idmap[id]
+        extra = src_bnk.hirc[idx]
+        extra_type = get_node_type(extra)
+
+        # Find the first object of the same type and insert the extra before that
+        for insert_idx, node in enumerate(dst_bnk.hirc):
+            if get_node_type(node) == extra_type:
+                # The first node of the HIRC is special and needs to be protected
+                if insert_idx == 0 or get_id(node) == 11895:
+                    insert_idx += 1
+
+                dst_bnk.hirc.insert(insert_idx, extra)
+                transferred_indices.append(idx)
+
+                for eid, idx in dst_bnk.idmap.items():
+                    if idx >= insert_idx:
+                        dst_bnk.idmap[eid] = idx + 1
+
+                dst_bnk.idmap[id] = insert_idx
+                break
+
+    return transferred_indices
+
+
 def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list[int] = None) -> list[str]:
     discovered_ids = set([0])
     issues = []
@@ -675,7 +723,7 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
             elif path.endswith("direct_parent_id"):
                 if item in discovered_ids:
                     issues.append(f"is defined after its parent {item}")
-            
+
             elif item not in discovered_ids:
                 exists = (item in src_bnk.hirc)
                 if exists:
@@ -697,6 +745,11 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
         delve(get_body(node), id, f"{id}: ")
 
         verified_indices.add(idx)
+
+        # References to other objects will always be by hash
+        if isinstance(id, str):
+            id = calc_hash(id)
+
         discovered_ids.add(id)
 
     if check_indices and len(verified_indices) < len(check_indices):
@@ -724,11 +777,9 @@ def write_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, wems: list[int]):
     print(f"Copying {len(wems)} wems")
     for wem in wems:
         wem_name = f"{wem}.wem"
-        if (dst_bnk.bnk_dir / wem_name).is_file():
-            #print(f"wem {wem_name} already exists, skipping")
-            pass
-        else:
-            shutil.copy(src_bnk.bnk_dir / wem_name, dst_bnk.bnk_dir / wem_name)
+        # Copy even if the file exists already in case something went wrong before
+        (dst_bnk.bnk_dir / wem_name).unlink(missing_ok=True)
+        shutil.copy(src_bnk.bnk_dir / wem_name, dst_bnk.bnk_dir / wem_name)
 
 
 if __name__ == "__main__":
