@@ -714,39 +714,39 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
             elif path.endswith("bank_id"):
                 if item != dst_bnk.id:
                     # Not sure if this can be an issue
-                    issues.append(f"reference to external soundbank {item}")
+                    issues.append(f"{node_id}:reference to external soundbank {item}")
             
             elif path.endswith("id/Hash"):
                 if item in discovered_ids:
-                    issues.append(f"has duplicates")
+                    issues.append(f"{node_id}: has duplicates")
             
             elif path.endswith("direct_parent_id"):
                 if item in discovered_ids:
-                    issues.append(f"is defined after its parent {item}")
+                    issues.append(f"{node_id}: is defined after its parent {item}")
 
             elif item not in discovered_ids:
                 exists = (item in src_bnk.hirc)
                 if exists:
-                    issues.append(f"{path}: reference {item} was not transferred")
+                    issues.append(f"{node_id}: {path}: reference {item} was not transferred")
                 else:
-                    issues.append(f"{path}: reference {item} does not exist (probably okay?)")
+                    issues.append(f"{node_id}: {path}: reference {item} does not exist (probably okay?)")
 
     for idx, node in enumerate(dst_bnk.hirc):
-        id = get_id(node)
+        node_id = get_id(node)
 
-        if id in discovered_ids:
-            issues.append(f"{id}: node has been defined before")
+        if node_id in discovered_ids:
+            issues.append(f"{node_id}: node has been defined before")
             continue
 
-        discovered_ids.add(id)
+        discovered_ids.add(node_id)
         if idx not in check_indices:
             continue
 
-        delve(get_body(node), id, f"{id}: ")
+        delve(get_body(node), node_id, "")
 
         # References to other objects will always be by hash
-        if isinstance(id, str):
-            id = calc_hash(id)
+        if isinstance(node_id, str):
+            node_id = calc_hash(node_id)
 
         verified_indices.add(idx)
 
