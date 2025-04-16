@@ -733,12 +733,12 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
 
     for idx, node in enumerate(dst_bnk.hirc):
         id = get_id(node)
-        discovered_ids.add(id)
 
         if id in discovered_ids:
             issues.append(f"{id}: node has been defined before")
             continue
 
+        discovered_ids.add(id)
         if idx not in check_indices:
             continue
 
