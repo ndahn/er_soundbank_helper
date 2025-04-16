@@ -719,6 +719,10 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
             elif path.endswith("id/Hash"):
                 if item in discovered_ids:
                     issues.append(f"{node_id}: has duplicates")
+
+            elif path.endswith("id/String"):
+                if calc_hash(item) in discovered_ids:
+                    issues.append(f"{node_id}: has duplicates")
             
             elif path.endswith("direct_parent_id"):
                 if item in discovered_ids:
