@@ -1,5 +1,7 @@
 A nifty little tool I wrote for transfering sounds between Elden Ring soundbanks. 
 
+This tool was written for Wwise soundbanks, where every sound is not just a simple media file, but is controlled by a graph of wwise objects which define how it's played, randomized, sequenced, which busses to use, volume, and a myriad other things. This tool will transfer all of that from one soundbank to another.
+
 # What does it do?
 You pass the script two unpacked soundbanks and the sound IDs you want to use, and it will copy the JSON entries and WEMs from the first soundbank to the second. This is essentially what is described in [Themyys' tutorial](http://soulsmodding.wikidot.com/tutorial:main#toc9).
 
@@ -9,9 +11,12 @@ More specifically, you need to have 3 things:
 - an *unpacked* destination soundbank, typically *cs_main*.
 - the wwise IDs of the sounds you want to use (e.g. in animation TAEs).
 
-To unpack your game use [UXM](https://github.com/Nordgaren/UXM-Selective-Unpack). You *have to* unpack the entire game, otherwise the soundbanks will not be included. Soundbanks can be found under `sd` or `sd/enus` and unpacked using [rewwise](https://github.com/vswarte/rewwise/) by dropping them onto `bnk2json.exe`.
+To unpack your game use [Nuxe](https://github.com/JKAnderson/Nuxe/releases). Soundbanks can be found under `sd` or `sd/enus` and unpacked using [rewwise](https://github.com/vswarte/rewwise/) by dropping them onto `bnk2json.exe`.
 
-To use the script, either modify the uppercase variables at the top, or call it from a terminal. See `--help` for required arguments and such. Paths to soundbanks should lead to the unpacked directories (not e.g. the `soundbank.json` inside). If a passed path is not absolute, the script's folder will be used; that is, you can place your unpacked soundbanks in the same folder as the script to avoid having to type full paths.
+Then run `ERSoundbankHelper.exe` and follow the dialog's instructions. In case of issues check the terminal output!
+
+# I like my code raw
+If you are a relatable person you can use the `er_soundbank_helper` script directly. To use the script, either modify the uppercase variables at the top, or call it from a terminal. See `--help` for required arguments and such. Paths to soundbanks should lead to the unpacked directories (not e.g. the `soundbank.json` inside). If a passed path is not absolute, the script's folder will be used; that is, you can place your unpacked soundbanks in the same folder as the script to avoid having to type full paths.
 
 # Fine tuning
 You may want to do some small adjustments to your soundfiles, e.g. setting a different volume. This process is still entirely manual and up to you. This is done in the edited `soundbank.json`. Look for the IDs the script printed during execution; the volume is usually adjusted on a `RandomSequenceContainer`. It will contain a dict called `node_initial_params` in which you should find the relevant settings. There are different (*mysterious*) ways of influencing audio volume (such as *GameAuxSendVolume*, *UserAuxSendVolume0*, etc.), but the easiest (and recommended!) one to use is just called `Volume`. Values will typically range from `-15` for very loud noises to `-3` for very quiet ones. 

@@ -1,1 +1,6 @@
 cs_*/
+soundbanks/
+build/
+dist/
+main.spec
+*.pyc

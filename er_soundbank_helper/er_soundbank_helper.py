@@ -14,8 +14,8 @@ from pprint import pprint
 
 # ------------------------------------------------------------------------------------------
 # Set these paths so they point to your extracted source and destination soundbanks.
-SRC_BNK_DIR = "../cs_c5120"
-DST_BNK_DIR = "../cs_main"
+SRC_BNK_DIR = "soundbanks/nr_cs_main"
+DST_BNK_DIR = "soundbanks/cs_main"
 
 # NPC sounds are usually named "c<npc-id>0<sound-id>". When moving npc sounds to the player, I 
 # recommend renaming them as follows. 
@@ -193,7 +193,7 @@ def add_children(node: dict, *new_item_ids: int):
     children["items"] = sorted(list(set(items)))
 
 
-def main(
+def transfer_wwise_main(
     src_bnk_dir: str,
     dst_bnk_dir: str,
     wwise_map: dict[str, str],
@@ -420,7 +420,7 @@ def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
         node_idx, debug_parent = todo.pop()
 
         if node_idx in visited:
-            return
+            continue
 
         # Will contain the highest parents in the beginning (to the left) and deeper children 
         # towards the end (right)
@@ -845,7 +845,7 @@ if __name__ == "__main__":
             wwise_ids[src_id] = dst_id
 
     try:
-        main(
+        transfer_wwise_main(
             src_bnk_dir,
             dst_bnk_dir,
             wwise_ids,
