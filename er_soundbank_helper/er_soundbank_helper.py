@@ -17,17 +17,17 @@ from pprint import pprint
 SRC_BNK_DIR = "soundbanks/nr_cs_main"
 DST_BNK_DIR = "soundbanks/cs_main"
 
-# NPC sounds are usually named "c<npc-id>0<sound-id>". When moving npc sounds to the player, I 
-# recommend renaming them as follows. 
-# 
+# NPC sounds are usually named "c<npc-id>0<sound-id>". When moving npc sounds to the player, I
+# recommend renaming them as follows.
+#
 #     <soundtype>4<npc-id><sound-id>
-# 
-# This should make it easy to avoid collisions and allows you to keep track of which IDs you've 
+#
+# This should make it easy to avoid collisions and allows you to keep track of which IDs you've
 # ported so far and from where.
-# 
+#
 # The soundtype has (afaik) no meaning other than being used for calculating the event hashes, so
 # you should be able to use whatever you like from this list:
-# 
+#
 WWISE_IDS = {
     "c512006630": "s451206630",
     "c512006635": "s451206635",
@@ -55,17 +55,17 @@ def calc_hash(input: str) -> int:
     # https://github.com/vswarte/rewwise/blob/127d665ab5393fb7b58f1cade8e13a46f71e3972/analysis/src/fnv.rs#L6
     FNV_BASE = 2166136261
     FNV_PRIME = 16777619
-    
+
     input_lower = input.lower()
     input_bytes = input_lower.encode()
-    
+
     result = FNV_BASE
     for byte in input_bytes:
         result *= FNV_PRIME
         # Ensure it stays within 32-bit range
         result &= 0xFFFFFFFF
         result ^= byte
-    
+
     return result
 
 
@@ -74,7 +74,7 @@ def load_soundbank(bnk_dir: str) -> Soundbank:
     bnk_dir: Path = Path(bnk_dir)
     if not bnk_dir.is_absolute():
         bnk_dir = Path(__file__).resolve().parent / bnk_dir
-    
+
     bnk_dir = bnk_dir.resolve()
 
     json_path = bnk_dir / "soundbank.json"
@@ -132,17 +132,19 @@ def print_hierarchy(debug_tree: list, prefix: str = ""):
 
 def get_event_idx(evt_name: str, bnk: Soundbank) -> int:
     idx = bnk.idmap.get(evt_name, None)
-        
+
     if idx is not None:
         return idx
-    
+
     play_evt_hash = calc_hash(evt_name)
     idx = bnk.idmap.get(play_evt_hash)
-    
+
     if idx is not None:
         return idx
-    
-    raise ValueError(f"Could not find index for event {evt_name}. Did you set the correct source soundbank?")
+
+    raise ValueError(
+        f"Could not find index for event {evt_name}. Did you set the correct source soundbank?"
+    )
 
 
 def get_id(node: dict) -> int:
@@ -170,7 +172,7 @@ def get_user_reply(query: str, valid: str | list) -> str:
         choices = "[" + "/".join(valid) + "]"
 
     q = f"{query} {choices} > "
-    
+
     while True:
         reply = input(q)
         if reply in valid:
@@ -181,7 +183,7 @@ def add_children(node: dict, *new_item_ids: int):
     body = get_body(node)
 
     if "children" not in body:
-        # Sounds may reference nodes like "EffectCustom" as their parent, but we don't need to 
+        # Sounds may reference nodes like "EffectCustom" as their parent, but we don't need to
         # deal with these as they will work without explicit children
         return
 
@@ -204,7 +206,7 @@ def transfer_wwise_main(
     # Check the IDs before we start the heavy work
     wwise_id_check = re.compile(r"[acfopsmvxbiyzegd][0-9]{9}")
     verified_wwise_map = {}
-    
+
     for src_id, dst_id in wwise_map.items():
         # Add 0 padding to wwise IDs, otherwise the hashes will be wrong
         if len(src_id) < 10:
@@ -215,10 +217,10 @@ def transfer_wwise_main(
 
         if len(dst_id) < 10:
             dst_id = dst_id[0] + "0" * (10 - len(dst_id)) + dst_id[1:]
-        
+
         if not re.fullmatch(wwise_id_check, dst_id):
             raise ValueError(f"{dst_id} is not a valid wwise ID")
-        
+
         verified_wwise_map[src_id] = dst_id
 
     wwise_map = verified_wwise_map
@@ -229,7 +231,7 @@ def transfer_wwise_main(
 
     print("Loading destination soundbank")
     dst_bnk = load_soundbank(dst_bnk_dir)
-    
+
     wems = []
     transferred_indices = []
 
@@ -277,13 +279,15 @@ def transfer_wwise_main(
             if "Event" in src_bnk.hirc[entrypoint_idx]["body"]:
                 # Action references another event, let's assume ER doesn't go too crazy here
                 if entrypoint_idx not in transfer_event_indices:
-                    raise RuntimeError(f"Event {entrypoint_id} is referencing another event, but I don't know how to handle this (yet)!")
+                    raise RuntimeError(
+                        f"Event {entrypoint_id} is referencing another event, but I don't know how to handle this (yet)!"
+                    )
                 continue
 
             # Collect the hierarchy responsible for playing the sound(s)
             new_toi, new_wems, debug_tree = collect_action_chain(src_bnk, entrypoint_id)
-            
-            # All children will be appended left so they appear before their parents in the 
+
+            # All children will be appended left so they appear before their parents in the
             # transfer indices list
             transfer_object_indices.extendleft(new_toi)
             wems.extend(new_wems)
@@ -292,7 +296,9 @@ def transfer_wwise_main(
             upchain = collect_parent_chain(src_bnk, entrypoint_id)
 
             play_evt_hash = calc_hash(play_evt_name)
-            print(f"Parsing wwise {wwise_src} ({play_evt_hash}) resulted in the following hierarchy:")
+            print(
+                f"Parsing wwise {wwise_src} ({play_evt_hash}) resulted in the following hierarchy:"
+            )
             print(f"\nWwise {play_evt_name}")
             print_hierarchy(debug_tree)
             # pprint(debug_tree)
@@ -309,8 +315,8 @@ def transfer_wwise_main(
             # Go upwards through the parents chain and see what needs to be transferred
             for up_id in upchain:
                 if up_id in dst_bnk.idmap:
-                    # Once we encounter an existing node we can assume the rest of the chain is 
-                    # intact. Child nodes must be inserted *before* the first existing parent. 
+                    # Once we encounter an existing node we can assume the rest of the chain is
+                    # intact. Child nodes must be inserted *before* the first existing parent.
                     obj_transfer_idx = dst_bnk.idmap[up_id]
                     add_children(dst_bnk.hirc[dst_bnk.idmap[up_id]], up_child_id)
                     break
@@ -322,11 +328,11 @@ def transfer_wwise_main(
                     add_children(up, up_child_id)
                     continue
 
-                # First time we encounter upchain node, clear the children, as non-existing items 
+                # First time we encounter upchain node, clear the children, as non-existing items
                 # will make the soundbank invalid
                 get_body(up)["children"]["items"] = []
                 add_children(up, up_child_id)
-                
+
                 transfer_object_indices.append(up_idx)
                 up_child_id = up_id
 
@@ -350,7 +356,13 @@ def transfer_wwise_main(
                         break
 
             # Transfer the objects
-            transferred_objects = transfer_objects(src_bnk, dst_bnk, transfer_object_indices, obj_transfer_idx)
+            transferred_objects = transfer_objects(
+                src_bnk,
+                dst_bnk,
+                transfer_object_indices,
+                obj_transfer_idx,
+                no_questions=no_questions,
+            )
             transferred_indices.extend(transferred_objects)
 
             # Now we write the play and stop events into the event section
@@ -362,15 +374,25 @@ def transfer_wwise_main(
                     evt_transfer_idx = evt_idx + 1
                     break
 
-            transferred_events = transfer_events(src_bnk, dst_bnk, transfer_event_indices, evt_transfer_idx, wwise_src, wwise_dst)
+            transferred_events = transfer_events(
+                src_bnk,
+                dst_bnk,
+                transfer_event_indices,
+                evt_transfer_idx,
+                wwise_src,
+                wwise_dst,
+                no_questions=no_questions,
+            )
             transferred_indices.extend(transferred_events)
 
-            transferred_extras = transfer_extras(src_bnk, dst_bnk, extras)
+            transferred_extras = transfer_extras(
+                src_bnk, dst_bnk, extras, no_questions=no_questions
+            )
             transferred_indices.extend(transferred_extras)
-            
+
             print("-" * 40 + "\n")
 
-    print("All hierarchies collected")    
+    print("All hierarchies collected")
     print("\nFound the following WEMs:")
     pprint(wems)
 
@@ -386,19 +408,21 @@ def transfer_wwise_main(
 
     if not enable_write:
         print(
-            f"WARNING: enable_write is False, no changes to the target soundbank or wems will be made"
+            "WARNING: enable_write is False, no changes to the target soundbank or wems will be made"
         )
     else:
         if not no_questions:
             reply = get_user_reply("Write to destination?", "yn")
-            
+
             if reply == "y":
                 pass
             elif reply == "n":
                 sys.exit(0)
-        
+
         write_soundbank(src_bnk, dst_bnk, wems)
-        print(f"\nDone! The following wwise play events were added to {dst_bnk.bnk_dir.name}:")
+        print(
+            f"\nDone! The following wwise play events were added to {dst_bnk.bnk_dir.name}:"
+        )
         for wwise_src, wwise_dst in wwise_map.items():
             dst_hash = calc_hash(f"Play_{wwise_dst}")
             print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
@@ -422,7 +446,7 @@ def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
         if node_idx in visited:
             continue
 
-        # Will contain the highest parents in the beginning (to the left) and deeper children 
+        # Will contain the highest parents in the beginning (to the left) and deeper children
         # towards the end (right)
         transfer_object_indices.append(node_idx)
         visited.add(node_idx)
@@ -462,19 +486,19 @@ def collect_parent_chain(bnk: Soundbank, entrypoint_id: int) -> deque:
     upchain = deque()
 
     while parent_id != 0 and parent_id in bnk.idmap:
-        # No early exit, we want to recover the entire upwards chain. We'll handle the 
+        # No early exit, we want to recover the entire upwards chain. We'll handle the
         # parts we actually need later
 
         # Check for loops. No clue if that ever happens, but better be safe than sorry
         if parent_id in upchain:
             print("WARNING: parent chain seems to contain a loop")
-            
+
             for idx in upchain:
                 debug_obj = bnk.hirc[idx]
                 debug_obj_id = get_id(debug_obj)
                 debug_parent = get_parent_id(debug_obj)
                 print(f"{debug_obj_id} -> {debug_parent}")
-            
+
             print(f"{debug_parent} -> {parent_id}")
 
             reply = get_user_reply("Continue?", "yn")
@@ -497,7 +521,7 @@ def collect_extras(bnk: Soundbank, transfer_object_indices: list[int]):
     def delve(item: Any, field: str, new_ids: set):
         if field in ["source_id", "direct_parent_id", "children"]:
             return
-        
+
         if isinstance(item, list):
             for i, subnode in enumerate(item):
                 delve(subnode, f"{field}[{i}]", new_ids)
@@ -523,14 +547,20 @@ def collect_extras(bnk: Soundbank, transfer_object_indices: list[int]):
 
             for id in new_ids.difference(extras):
                 todo.append(id)
-                # Will contain the highest parents in the beginning (to the left) and deeper 
+                # Will contain the highest parents in the beginning (to the left) and deeper
                 # children towards the end (right)
                 extras.append(id)
 
     return extras
 
 
-def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_indices: list[int], obj_transfer_idx: int):
+def transfer_objects(
+    src_bnk: Soundbank,
+    dst_bnk: Soundbank,
+    transfer_object_indices: list[int],
+    obj_transfer_idx: int,
+    no_questions: bool = False,
+):
     transferred_indices = []
 
     # The first node of the HIRC is special and needs to be protected
@@ -543,13 +573,15 @@ def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_ind
 
         if obj_id in dst_bnk.idmap:
             if no_questions:
-                print(f"Skipping already existing object {obj_id} ({get_node_type(obj)})")
+                print(
+                    f"Skipping already existing object {obj_id} ({get_node_type(obj)})"
+                )
                 reply = "s"
             else:
                 obj_type = get_node_type(obj)
                 reply = get_user_reply(
                     f"Object ID {obj_id} ({obj_type}) already exists in target soundbank.",
-                    ["skip", "cancel", "replace"]
+                    ["skip", "cancel", "replace"],
                 )
 
             if reply == "s":
@@ -578,7 +610,15 @@ def transfer_objects(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_object_ind
     return transferred_indices
 
 
-def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indices: list[int], evt_transfer_idx: int, src_wwise_id: str, dst_wwise_id: str):
+def transfer_events(
+    src_bnk: Soundbank,
+    dst_bnk: Soundbank,
+    transfer_event_indices: list[int],
+    evt_transfer_idx: int,
+    src_wwise_id: str,
+    dst_wwise_id: str,
+    no_questions: bool = False,
+):
     transferred_indices = []
 
     # The first node of the HIRC is special and needs to be protected
@@ -598,19 +638,23 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
 
         # Map to the new event ID
         if evt_id in wwise_map:
-            evt["id"] = { "String": wwise_map[evt_id] }
+            evt["id"] = {"String": wwise_map[evt_id]}
             evt_id = wwise_map[evt_id]
 
-        if evt_id in dst_bnk.idmap or (isinstance(evt_id, str) and calc_hash(evt_id) in dst_bnk.idmap):
+        if evt_id in dst_bnk.idmap or (
+            isinstance(evt_id, str) and calc_hash(evt_id) in dst_bnk.idmap
+        ):
             if no_questions:
-                print(f"Skipping already existing event {evt_id} ({get_node_type(evt)})")
+                print(
+                    f"Skipping already existing event {evt_id} ({get_node_type(evt)})"
+                )
                 reply = "s"
             else:
                 # Getting the action type is possible but more effort, so...
                 orig_eid = get_id(src_bnk.hirc[idx])
                 reply = get_user_reply(
                     f"Event ID {evt_id} ({orig_eid}) already exists in target soundbank.",
-                    ["skip", "cancel", "replace"]
+                    ["skip", "cancel", "replace"],
                 )
 
             if reply == "s":
@@ -637,8 +681,10 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
                             # NOTE: If we want to use other soundbanks we'd probably have to add them in the STID
                             subnode["bank_id"] = dst_bnk.id
                         else:
-                            print(f"WARNING: action {evt_id} references external soundbank {orig_bnk_id}. "
-                                    f"If this sound(bank) doesn't work, try setting this action's bank_id to {dst_bnk.id}")
+                            print(
+                                f"WARNING: action {evt_id} references external soundbank {orig_bnk_id}. "
+                                f"If this sound(bank) doesn't work, try setting this action's bank_id to {dst_bnk.id}"
+                            )
 
         dst_bnk.hirc.insert(evt_transfer_idx, evt)
         transferred_indices.append(evt_transfer_idx)
@@ -654,7 +700,12 @@ def transfer_events(src_bnk: Soundbank, dst_bnk: Soundbank, transfer_event_indic
     return transferred_indices
 
 
-def transfer_extras(src_bnk: Soundbank, dst_bnk: Soundbank, extra_ids: list[int]):
+def transfer_extras(
+    src_bnk: Soundbank,
+    dst_bnk: Soundbank,
+    extra_ids: list[int],
+    no_questions: bool = False,
+):
     transferred_indices = []
 
     for id in extra_ids:
@@ -688,7 +739,9 @@ def transfer_extras(src_bnk: Soundbank, dst_bnk: Soundbank, extra_ids: list[int]
     return transferred_indices
 
 
-def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list[int] = None) -> list[str]:
+def verify_soundbank(
+    src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list[int] = None
+) -> list[str]:
     discovered_ids = set([0])
     issues = []
 
@@ -715,7 +768,7 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
                 if item != dst_bnk.id:
                     # Not sure if this can be an issue
                     issues.append(f"{node_id}:reference to external soundbank {item}")
-            
+
             elif path.endswith("id/Hash"):
                 if item in discovered_ids:
                     issues.append(f"{node_id}: has duplicates")
@@ -723,17 +776,21 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
             elif path.endswith("id/String"):
                 if calc_hash(item) in discovered_ids:
                     issues.append(f"{node_id}: has duplicates")
-            
+
             elif path.endswith("direct_parent_id"):
                 if item in discovered_ids:
                     issues.append(f"{node_id}: is defined after its parent {item}")
 
             elif item not in discovered_ids:
-                exists = (item in src_bnk.hirc)
+                exists = item in src_bnk.hirc
                 if exists:
-                    issues.append(f"{node_id}: {path}: reference {item} was not transferred")
+                    issues.append(
+                        f"{node_id}: {path}: reference {item} was not transferred"
+                    )
                 else:
-                    issues.append(f"{node_id}: {path}: reference {item} does not exist (probably okay?)")
+                    issues.append(
+                        f"{node_id}: {path}: reference {item} does not exist (probably okay?)"
+                    )
 
     for idx, node in enumerate(dst_bnk.hirc):
         node_id = get_id(node)
@@ -755,7 +812,9 @@ def verify_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, check_indices: list
         verified_indices.add(idx)
 
     if check_indices and len(verified_indices) < len(check_indices):
-        issues.append(f"Expected nodes not found: {[check_indices.difference(verified_indices)]}")
+        issues.append(
+            f"Expected nodes not found: {[check_indices.difference(verified_indices)]}"
+        )
 
     return issues
 
@@ -839,9 +898,12 @@ if __name__ == "__main__":
             else:
                 src_id = dst_id = s
 
-            if not (re.fullmatch(wwise_id_check, src_id) and re.fullmatch(wwise_id_check, dst_id)):
+            if not (
+                re.fullmatch(wwise_id_check, src_id)
+                and re.fullmatch(wwise_id_check, dst_id)
+            ):
                 raise ValueError(f"Invalid sound ID specification {s}")
-            
+
             wwise_ids[src_id] = dst_id
 
     try:
@@ -852,12 +914,12 @@ if __name__ == "__main__":
             enable_write=enable_write,
             no_questions=no_questions,
         )
-    except Exception as e:
+    except Exception:
         if hasattr(sys, "gettrace") and sys.gettrace() is not None:
             # Debugger is active, let the debugger handle it
             raise
 
         # In case we are run from a temporary terminal, otherwise we won't see what's wrong
         print(traceback.format_exc())
-    
+
     input("Press enter to exit...")
