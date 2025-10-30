@@ -50,14 +50,14 @@ class Soundbank:
     idmap: dict[int, int]  # ID (or hash) to HIRC index
 
 
-def calc_hash(input: str) -> int:
+def calc_hash_fnv1_32(input: str) -> int:
+    """Calculate the FNV-1 32-bit hash of the input string."""
     # Taken from rewwise
     # https://github.com/vswarte/rewwise/blob/127d665ab5393fb7b58f1cade8e13a46f71e3972/analysis/src/fnv.rs#L6
     FNV_BASE = 2166136261
     FNV_PRIME = 16777619
 
-    input_lower = input.lower()
-    input_bytes = input_lower.encode()
+    input_bytes = input.lower().encode()
 
     result = FNV_BASE
     for byte in input_bytes:
@@ -108,7 +108,7 @@ def load_soundbank(bnk_dir: str) -> Soundbank:
             eid = idsec["String"]
             idmap[eid] = idx
             # Events are sometimes referred to by their hash, but it's not included in the json
-            oid = calc_hash(eid)
+            oid = calc_hash_fnv1_32(eid)
             idmap[oid] = idx
         else:
             print(f"Don't know how to handle object with id {idsec}")
@@ -136,7 +136,7 @@ def get_event_idx(evt_name: str, bnk: Soundbank) -> int:
     if idx is not None:
         return idx
 
-    play_evt_hash = calc_hash(evt_name)
+    play_evt_hash = calc_hash_fnv1_32(evt_name)
     idx = bnk.idmap.get(play_evt_hash)
 
     if idx is not None:
@@ -295,7 +295,7 @@ def transfer_wwise_main(
             # Go up the chain to find all the parents we need
             upchain = collect_parent_chain(src_bnk, entrypoint_id)
 
-            play_evt_hash = calc_hash(play_evt_name)
+            play_evt_hash = calc_hash_fnv1_32(play_evt_name)
             print(
                 f"Parsing wwise {wwise_src} ({play_evt_hash}) resulted in the following hierarchy:"
             )
@@ -424,7 +424,7 @@ def transfer_wwise_main(
             f"\nDone! The following wwise play events were added to {dst_bnk.bnk_dir.name}:"
         )
         for wwise_src, wwise_dst in wwise_map.items():
-            dst_hash = calc_hash(f"Play_{wwise_dst}")
+            dst_hash = calc_hash_fnv1_32(f"Play_{wwise_dst}")
             print(f" - {wwise_src} -> {wwise_dst} ({dst_hash})")
 
     print("\nDon't forget to repack your soundbank!")
@@ -628,8 +628,8 @@ def transfer_events(
     wwise_map = {
         f"Play_{src_wwise_id}": f"Play_{dst_wwise_id}",
         f"Stop_{src_wwise_id}": f"Stop_{dst_wwise_id}",
-        calc_hash(f"Play_{src_wwise_id}"): f"Play_{dst_wwise_id}",
-        calc_hash(f"Stop_{src_wwise_id}"): f"Stop_{dst_wwise_id}",
+        calc_hash_fnv1_32(f"Play_{src_wwise_id}"): f"Play_{dst_wwise_id}",
+        calc_hash_fnv1_32(f"Stop_{src_wwise_id}"): f"Stop_{dst_wwise_id}",
     }
 
     for idx in transfer_event_indices:
@@ -642,7 +642,7 @@ def transfer_events(
             evt_id = wwise_map[evt_id]
 
         if evt_id in dst_bnk.idmap or (
-            isinstance(evt_id, str) and calc_hash(evt_id) in dst_bnk.idmap
+            isinstance(evt_id, str) and calc_hash_fnv1_32(evt_id) in dst_bnk.idmap
         ):
             if no_questions:
                 print(
@@ -774,7 +774,7 @@ def verify_soundbank(
                     issues.append(f"{node_id}: has duplicates")
 
             elif path.endswith("id/String"):
-                if calc_hash(item) in discovered_ids:
+                if calc_hash_fnv1_32(item) in discovered_ids:
                     issues.append(f"{node_id}: has duplicates")
 
             elif path.endswith("direct_parent_id"):
@@ -807,7 +807,7 @@ def verify_soundbank(
 
         # References to other objects will always be by hash
         if isinstance(node_id, str):
-            node_id = calc_hash(node_id)
+            node_id = calc_hash_fnv1_32(node_id)
 
         verified_indices.add(idx)
 

@@ -6,7 +6,7 @@ import traceback
 import threading
 
 # Import core logic functions for loading soundbank
-from .er_soundbank_helper import load_soundbank, Soundbank
+from .er_soundbank_helper import load_soundbank, Soundbank, calc_hash_fnv1_32
 from .translations import translate
 
 
@@ -91,6 +91,68 @@ class LoadingDialog(tk.Toplevel):
         self.destroy()
 
 
+class HashCalculatorDialog(tk.Toplevel):
+    """Dialog for calculating hash of input string"""
+    
+    def __init__(self, parent, lang: str = "en"):
+        super().__init__(parent)
+        
+        self.parent = parent
+        self.lang = lang
+        
+        self.title("Hash Calculator")
+        self.geometry("400x150")
+        self.transient(parent)  # Set to be on top of parent
+        
+        # Create UI
+        self._create_widgets()
+        
+    def _create_widgets(self) -> None:
+        # Main frame
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Input label and entry
+        input_label = ttk.Label(main_frame, text="Input String:")
+        input_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.input_entry = ttk.Entry(main_frame, width=50)
+        self.input_entry.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        
+        # Bind to calculate hash on every change
+        self.input_entry.bind("<KeyRelease>", self._calculate_hash)
+        
+        # Output label and entry
+        output_label = ttk.Label(main_frame, text="Hash (FNV-1 32-bit):")
+        output_label.grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
+        
+        self.output_entry = ttk.Entry(main_frame, width=50, state="readonly")
+        self.output_entry.grid(row=3, column=0, sticky=(tk.W, tk.E))
+        
+        # Configure column weight for resizing
+        main_frame.columnconfigure(0, weight=1)
+        
+    def _calculate_hash(self, event=None) -> None:
+        """Calculate FNV-1 hash of input string and display in output field"""
+        input_text = self.input_entry.get()
+        
+        if not input_text:
+            # Clear output if input is empty
+            self.output_entry.config(state="normal")
+            self.output_entry.delete(0, tk.END)
+            self.output_entry.config(state="readonly")
+            return
+        
+        # Calculate FNV-1 32-bit hash
+        hash_value = calc_hash_fnv1_32(input_text)
+        
+        # Display hash in output field
+        self.output_entry.config(state="normal")
+        self.output_entry.delete(0, tk.END)
+        self.output_entry.insert(0, str(hash_value))
+        self.output_entry.config(state="readonly")
+
+
 class IdSelectionDialog(tk.Toplevel):
     """Dialog for selecting IDs from soundbank and adding them to main window text boxes"""
     
@@ -121,7 +183,7 @@ class IdSelectionDialog(tk.Toplevel):
         label_row.pack(anchor=tk.W)
 
         help_left = ttk.Label(
-            label_row, text="ⓘ", foreground="blue", cursor="hand2"
+            label_row, text="ℹ", foreground="blue", cursor="hand2"
         )
         help_left.pack(side=tk.LEFT)
         ToolTip(help_left, "select_ids_tooltip", self)
@@ -243,7 +305,7 @@ class SoundbankHelperGui(tk.Tk):
         file_frame.pack(fill=tk.X)
 
         # File 1 with help icon in front
-        help1 = ttk.Label(file_frame, text="ⓘ", foreground="blue", cursor="hand2")
+        help1 = ttk.Label(file_frame, text="ℹ", foreground="blue", cursor="hand2")
         help1.grid(row=0, column=0, sticky=tk.W, pady=5)
         self.tooltips.append(ToolTip(help1, "select_source_tooltip", self))
 
@@ -264,7 +326,7 @@ class SoundbankHelperGui(tk.Tk):
         )
         self.widgets["browse_src_button"].grid(row=0, column=3)
 
-        help2 = ttk.Label(file_frame, text="ⓘ", foreground="blue", cursor="hand2")
+        help2 = ttk.Label(file_frame, text="ℹ", foreground="blue", cursor="hand2")
         help2.grid(row=1, column=0, sticky=tk.W, pady=5)
         self.tooltips.append(ToolTip(help2, "select_dest_tooltip", self))
 
@@ -298,7 +360,7 @@ class SoundbankHelperGui(tk.Tk):
         left_label_row.pack(anchor=tk.W)
 
         help_left = ttk.Label(
-            left_label_row, text="ⓘ", foreground="blue", cursor="hand2"
+            left_label_row, text="ℹ", foreground="blue", cursor="hand2"
         )
         help_left.pack(side=tk.LEFT)
         self.tooltips.append(ToolTip(help_left, "source_ids_tooltip", self))
@@ -324,7 +386,7 @@ class SoundbankHelperGui(tk.Tk):
         right_label_row.pack(anchor=tk.W)
 
         help_right = ttk.Label(
-            right_label_row, text="ⓘ", foreground="blue", cursor="hand2"
+            right_label_row, text="ℹ", foreground="blue", cursor="hand2"
         )
         help_right.pack(side=tk.LEFT)
         self.tooltips.append(ToolTip(help_right, "dest_ids_tooltip", self))
@@ -341,7 +403,7 @@ class SoundbankHelperGui(tk.Tk):
         self.dst_wwise_ids.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         right_scroll.config(command=self.dst_wwise_ids.yview)
 
-        # --- Button to open ID selection dialog ---
+        # --- Buttons to open ID selection and hash calculator dialogs ---
         select_ids_frame = ttk.Frame(self, padding="10 0 10 0")
         select_ids_frame.pack(fill=tk.X)
         
@@ -349,7 +411,14 @@ class SoundbankHelperGui(tk.Tk):
             select_ids_frame, 
             command=self._open_id_selection_dialog
         )
-        self.widgets["open_id_dialog_button"].pack(anchor=tk.W)
+        self.widgets["open_id_dialog_button"].pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.widgets["open_hash_calculator_button"] = ttk.Button(
+            select_ids_frame,
+            text="Hash Calculator",
+            command=self._open_hash_calculator_dialog
+        )
+        self.widgets["open_hash_calculator_button"].pack(side=tk.LEFT)
 
         # Checkboxes
         check_frame = ttk.Frame(self, padding="10")
@@ -467,6 +536,10 @@ class SoundbankHelperGui(tk.Tk):
             return
         
         IdSelectionDialog(self, self.src_bank_path, self.lang)
+    
+    def _open_hash_calculator_dialog(self) -> None:
+        """Open hash calculator dialog"""
+        HashCalculatorDialog(self, self.lang)
 
     def _exec_transfer(self) -> None:
         try:
