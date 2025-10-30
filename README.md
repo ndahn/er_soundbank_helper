@@ -25,3 +25,7 @@ You may want to do some small adjustments to your soundfiles, e.g. setting a dif
 Once the script is done (assuming `enable_write` was set, of course), a backup of the destination `soundbank.json` will be placed in the destination's *parent* folder (look for `<soundbank_name>_backup.json`). You will have to pack your soundbank again using *rewwise* by dropping the modified soundbank folder onto `bnk2json.exe`. Then place the *repacked* soundbank in your mod folder, in a path corresponding to where you got it from (e.g. if you got it from `sd/enus`, place it in `sd/enus`, etc.).
 
 The official release of [Mod Engine 2](https://github.com/soulsmods/ModEngine2) does not support loading modified sound files right now. There is an inofficial release floating around which is packaged with some mods, e.g. [this one](https://www.nexusmods.com/eldenring/mods/6384) or [this one](https://www.nexusmods.com/eldenring/mods/6340). Don't forget to give an "endorse" to these kind people :) Also, you can keep your previous config files!
+
+# Contributions
+- Shiki: major gui improvements
+- LittleBear: empty soundbank template
