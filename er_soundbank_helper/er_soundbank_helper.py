@@ -831,16 +831,19 @@ def write_soundbank(src_bnk: Soundbank, dst_bnk: Soundbank, wems: list[int]):
     bnk_json_path = dst_bnk.bnk_dir / "soundbank.json"
 
     backup = dst_bnk.bnk_dir.name.rsplit(".", maxsplit=1)[0] + "_backup.json"
-    shutil.move(bnk_json_path, dst_bnk.bnk_dir.parent / backup)
+    shutil.move(bnk_json_path, dst_bnk.bnk_dir / backup)
     with bnk_json_path.open("w") as f:
         json.dump(dst_bnk.json, f, indent=2)
 
     print(f"Copying {len(wems)} wems")
     for wem in wems:
         wem_name = f"{wem}.wem"
-        # Copy even if the file exists already in case something went wrong before
-        (dst_bnk.bnk_dir / wem_name).unlink(missing_ok=True)
-        shutil.copy(src_bnk.bnk_dir / wem_name, dst_bnk.bnk_dir / wem_name)
+        try:
+            # Copy even if the file exists already in case something went wrong before
+            (dst_bnk.bnk_dir / wem_name).unlink(missing_ok=True)
+            shutil.copy(src_bnk.bnk_dir / wem_name, dst_bnk.bnk_dir / wem_name)
+        except FileNotFoundError:
+            print(f"WEM {wem_name} not found in source, skipping")
 
 
 if __name__ == "__main__":

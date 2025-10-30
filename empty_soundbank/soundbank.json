@@ -1,0 +1,717 @@
+{
+  "sections": [
+    {
+      "body": {
+        "BKHD": {
+          "version": 135,
+          "bank_id": 4168747551,
+          "language_fnv_hash": 157497788,
+          "wem_alignment": 16,
+          "project_id": 1906,
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "body": {
+        "HIRC": {
+          "object_count": 6,
+          "objects": [
+            {
+              "id": {
+                "Hash": 2134652476
+              },
+              "body": {
+                "Attenuation": {
+                  "is_cone_enabled": 0,
+                  "curves_to_use": [
+                    0,
+                    1,
+                    0,
+                    2,
+                    3,
+                    4,
+                    255
+                  ],
+                  "curves": [
+                    {
+                      "curve_scaling": "DB",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": -0.2920542,
+                          "interpolation": "Log3"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": -0.8741075,
+                          "interpolation": "Log3"
+                        },
+                        {
+                          "from": 70.0,
+                          "to": -0.93690425,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": -1.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "DB",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": -1,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "SCurve"
+                        },
+                        {
+                          "from": 70.0,
+                          "to": 50.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": 70.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "Constant"
+                        },
+                        {
+                          "from": 20.0,
+                          "to": 0.0,
+                          "interpolation": "SineRecip"
+                        },
+                        {
+                          "from": 55.0,
+                          "to": 20.0,
+                          "interpolation": "SineRecip"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": 50.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 100.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 9.92647,
+                          "to": 20.6375,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 80.02451,
+                          "to": 0.0,
+                          "interpolation": "Constant"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": 0.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    }
+                  ],
+                  "initial_rtpc": {
+                    "rtpcs": []
+                  }
+                }
+              }
+            },
+            {
+              "id": {
+                "Hash": 3162735674
+              },
+              "body": {
+                "Attenuation": {
+                  "is_cone_enabled": 0,
+                  "curves_to_use": [
+                    0,
+                    1,
+                    0,
+                    2,
+                    3,
+                    4,
+                    255
+                  ],
+                  "curves": [
+                    {
+                      "curve_scaling": "DB",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": -0.2501058,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 3.0,
+                          "to": -0.43765867,
+                          "interpolation": "Exp3"
+                        },
+                        {
+                          "from": 20.0,
+                          "to": -0.6018928,
+                          "interpolation": "SineRecip"
+                        },
+                        {
+                          "from": 44.68254,
+                          "to": -1.0,
+                          "interpolation": "Constant"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": -1.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "DB",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 20.0,
+                          "to": -0.33201993,
+                          "interpolation": "Exp3"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": -1.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "SineRecip"
+                        },
+                        {
+                          "from": 5.0,
+                          "to": 20.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 20.0,
+                          "to": 35.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": 40.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 10.0,
+                          "interpolation": "Log3"
+                        },
+                        {
+                          "from": 3.0,
+                          "to": 23.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": 25.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    },
+                    {
+                      "curve_scaling": "None",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 40.0,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 3.0,
+                          "to": 12.59375,
+                          "interpolation": "Linear"
+                        },
+                        {
+                          "from": 50.0,
+                          "to": 8.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    }
+                  ],
+                  "initial_rtpc": {
+                    "rtpcs": []
+                  }
+                }
+              }
+            },
+            {
+              "id": {
+                "Hash": 373222036
+              },
+              "body": {
+                "Attenuation": {
+                  "is_cone_enabled": 0,
+                  "curves_to_use": [
+                    0,
+                    0,
+                    0,
+                    255,
+                    255,
+                    255,
+                    255
+                  ],
+                  "curves": [
+                    {
+                      "curve_scaling": "DB",
+                      "points": [
+                        {
+                          "from": 0.0,
+                          "to": 0.0,
+                          "interpolation": "Constant"
+                        },
+                        {
+                          "from": 100.0,
+                          "to": 0.0,
+                          "interpolation": "Linear"
+                        }
+                      ]
+                    }
+                  ],
+                  "initial_rtpc": {
+                    "rtpcs": []
+                  }
+                }
+              }
+            },
+            {
+              "id": {
+                "Hash": 2967551262
+              },
+              "body": {
+                "ActorMixer": {
+                  "node_base_params": {
+                    "node_initial_fx_parameters": {
+                      "is_override_parent_fx": 1,
+                      "fx_bypass_bits": 0,
+                      "fx_chunks": [
+                        {
+                          "fx_index": 0,
+                          "fx_id": 0,
+                          "is_share_set": 0,
+                          "is_rendered": 1
+                        },
+                        {
+                          "fx_index": 1,
+                          "fx_id": 0,
+                          "is_share_set": 0,
+                          "is_rendered": 1
+                        }
+                      ]
+                    },
+                    "override_attachment_params": 0,
+                    "override_bus_id": 1862294529,
+                    "direct_parent_id": 1231000453,
+                    "unknown_flags": 0,
+                    "node_initial_params": {
+                      "prop_initial_values": [
+                        {
+                          "Volume": 0.9
+                        },
+                        {
+                          "LPF": 30.0
+                        },
+                        {
+                          "Priority": 80.0
+                        },
+                        {
+                          "CenterPCT": 50.0
+                        },
+                        {
+                          "UserAuxSendVolume0": -1.0
+                        },
+                        {
+                          "GameAuxSendVolume": -6.0
+                        },
+                        {
+                          "AttenuationID": 2134652476
+                        }
+                      ],
+                      "prop_ranged_modifiers": {
+                        "entries": []
+                      }
+                    },
+                    "positioning_params": {
+                      "unk1": false,
+                      "three_dimensional_position_type": "Emitter",
+                      "speaker_panning_type": "DirectSpeakerAssignment",
+                      "listener_relative_routing": true,
+                      "override_parent": true,
+                      "unk2": false,
+                      "enable_diffraction": false,
+                      "hold_listener_orientation": false,
+                      "hold_emitter_position_and_orientation": false,
+                      "enable_attenuation": true,
+                      "three_dimensional_spatialization_mode": "PositionAndOrientation",
+                      "path_mode": "StepSequence",
+                      "transition_time": 0,
+                      "vertices": [],
+                      "path_list_item_offsets": [],
+                      "three_dimensional_automation_params": []
+                    },
+                    "aux_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "override_reflections_aux_bus": false,
+                      "has_aux": true,
+                      "override_user_aux_sends": true,
+                      "unk4": 2,
+                      "aux1": 0,
+                      "aux2": 0,
+                      "aux3": 0,
+                      "aux4": 0,
+                      "reflections_aux_bus": 0
+                    },
+                    "adv_settings_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "is_virtual_voices_opt_override_parent": false,
+                      "ignore_parent_maximum_instances": false,
+                      "unk4": false,
+                      "use_virtual_behavior": false,
+                      "kill_newest": false,
+                      "virtual_queue_behavior": "PlayFromElapsedTime",
+                      "max_instance_count": 0,
+                      "below_threshold_behavior": "ContinueToPlay",
+                      "unk5": false,
+                      "unk6": false,
+                      "unk7": false,
+                      "unk8": false,
+                      "enable_envelope": false,
+                      "normalize_loudness": false,
+                      "override_analysis": false,
+                      "override_hdr_envelope": false
+                    },
+                    "state_chunk": {
+                      "state_property_info": [],
+                      "state_group_chunks": []
+                    },
+                    "initial_rtpc": {
+                      "rtpcs": [
+                        {
+                          "id": 830115334,
+                          "rtpc_type": "GameParameter",
+                          "rtpc_accum": "Additive",
+                          "param_id": 0,
+                          "curve_id": 978318092,
+                          "curve_scaling": "DB",
+                          "graph_points": [
+                            {
+                              "from": -90.0,
+                              "to": 0.0,
+                              "interpolation": "Constant"
+                            },
+                            {
+                              "from": 90.0,
+                              "to": 0.0,
+                              "interpolation": "Linear"
+                            }
+                          ]
+                        },
+                        {
+                          "id": 1437246667,
+                          "rtpc_type": "GameParameter",
+                          "rtpc_accum": "Additive",
+                          "param_id": 0,
+                          "curve_id": 836231977,
+                          "curve_scaling": "DB",
+                          "graph_points": [
+                            {
+                              "from": -180.0,
+                              "to": 0.0,
+                              "interpolation": "Constant"
+                            },
+                            {
+                              "from": 180.0,
+                              "to": 0.0,
+                              "interpolation": "Linear"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "children": {
+                    "items": []
+                  }
+                }
+              }
+            },
+            {
+              "id": {
+                "Hash": 299309023
+              },
+              "body": {
+                "ActorMixer": {
+                  "node_base_params": {
+                    "node_initial_fx_parameters": {
+                      "is_override_parent_fx": 0,
+                      "fx_bypass_bits": 0,
+                      "fx_chunks": []
+                    },
+                    "override_attachment_params": 0,
+                    "override_bus_id": 720844497,
+                    "direct_parent_id": 1231000453,
+                    "unknown_flags": 0,
+                    "node_initial_params": {
+                      "prop_initial_values": [
+                        {
+                          "Volume": -3.0
+                        },
+                        {
+                          "Priority": 80.0
+                        },
+                        {
+                          "CenterPCT": 50.0
+                        },
+                        {
+                          "GameAuxSendVolume": -6.0
+                        },
+                        {
+                          "AttenuationID": 373222036
+                        }
+                      ],
+                      "prop_ranged_modifiers": {
+                        "entries": []
+                      }
+                    },
+                    "positioning_params": {
+                      "unk1": false,
+                      "three_dimensional_position_type": "Emitter",
+                      "speaker_panning_type": "DirectSpeakerAssignment",
+                      "listener_relative_routing": true,
+                      "override_parent": true,
+                      "unk2": false,
+                      "enable_diffraction": false,
+                      "hold_listener_orientation": false,
+                      "hold_emitter_position_and_orientation": false,
+                      "enable_attenuation": true,
+                      "three_dimensional_spatialization_mode": "PositionAndOrientation",
+                      "path_mode": "StepSequence",
+                      "transition_time": 0,
+                      "vertices": [],
+                      "path_list_item_offsets": [],
+                      "three_dimensional_automation_params": []
+                    },
+                    "aux_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "override_reflections_aux_bus": false,
+                      "has_aux": false,
+                      "override_user_aux_sends": true,
+                      "unk4": 2,
+                      "aux1": 0,
+                      "aux2": 0,
+                      "aux3": 0,
+                      "aux4": 0,
+                      "reflections_aux_bus": 0
+                    },
+                    "adv_settings_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "is_virtual_voices_opt_override_parent": false,
+                      "ignore_parent_maximum_instances": false,
+                      "unk4": false,
+                      "use_virtual_behavior": false,
+                      "kill_newest": false,
+                      "virtual_queue_behavior": "PlayFromElapsedTime",
+                      "max_instance_count": 0,
+                      "below_threshold_behavior": "ContinueToPlay",
+                      "unk5": false,
+                      "unk6": false,
+                      "unk7": false,
+                      "unk8": false,
+                      "enable_envelope": false,
+                      "normalize_loudness": false,
+                      "override_analysis": false,
+                      "override_hdr_envelope": false
+                    },
+                    "state_chunk": {
+                      "state_property_info": [],
+                      "state_group_chunks": []
+                    },
+                    "initial_rtpc": {
+                      "rtpcs": []
+                    }
+                  },
+                  "children": {
+                    "items": []
+                  }
+                }
+              }
+            },
+            {
+              "id": {
+                "Hash": 1231000453
+              },
+              "body": {
+                "ActorMixer": {
+                  "node_base_params": {
+                    "node_initial_fx_parameters": {
+                      "is_override_parent_fx": 0,
+                      "fx_bypass_bits": 0,
+                      "fx_chunks": []
+                    },
+                    "override_attachment_params": 0,
+                    "override_bus_id": 3170124113,
+                    "direct_parent_id": 0,
+                    "unknown_flags": 0,
+                    "node_initial_params": {
+                      "prop_initial_values": [
+                        {
+                          "Priority": 80.0
+                        },
+                        {
+                          "CenterPCT": 50.0
+                        },
+                        {
+                          "GameAuxSendVolume": -12.0
+                        },
+                        {
+                          "AttenuationID": 3162735674
+                        }
+                      ],
+                      "prop_ranged_modifiers": {
+                        "entries": []
+                      }
+                    },
+                    "positioning_params": {
+                      "unk1": false,
+                      "three_dimensional_position_type": "Emitter",
+                      "speaker_panning_type": "DirectSpeakerAssignment",
+                      "listener_relative_routing": true,
+                      "override_parent": true,
+                      "unk2": false,
+                      "enable_diffraction": false,
+                      "hold_listener_orientation": false,
+                      "hold_emitter_position_and_orientation": false,
+                      "enable_attenuation": true,
+                      "three_dimensional_spatialization_mode": "PositionAndOrientation",
+                      "path_mode": "StepSequence",
+                      "transition_time": 0,
+                      "vertices": [],
+                      "path_list_item_offsets": [],
+                      "three_dimensional_automation_params": []
+                    },
+                    "aux_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "override_reflections_aux_bus": false,
+                      "has_aux": false,
+                      "override_user_aux_sends": false,
+                      "unk4": 2,
+                      "aux1": 0,
+                      "aux2": 0,
+                      "aux3": 0,
+                      "aux4": 0,
+                      "reflections_aux_bus": 0
+                    },
+                    "adv_settings_params": {
+                      "unk1": false,
+                      "unk2": false,
+                      "unk3": false,
+                      "is_virtual_voices_opt_override_parent": false,
+                      "ignore_parent_maximum_instances": false,
+                      "unk4": true,
+                      "use_virtual_behavior": false,
+                      "kill_newest": false,
+                      "virtual_queue_behavior": "PlayFromElapsedTime",
+                      "max_instance_count": 50,
+                      "below_threshold_behavior": "ContinueToPlay",
+                      "unk5": false,
+                      "unk6": false,
+                      "unk7": false,
+                      "unk8": false,
+                      "enable_envelope": false,
+                      "normalize_loudness": false,
+                      "override_analysis": false,
+                      "override_hdr_envelope": false
+                    },
+                    "state_chunk": {
+                      "state_property_info": [],
+                      "state_group_chunks": []
+                    },
+                    "initial_rtpc": {
+                      "rtpcs": []
+                    }
+                  },
+                  "children": {
+                    "items": [
+                      2967551262,
+                      299309023
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

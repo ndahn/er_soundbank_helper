@@ -10,3 +10,4 @@ REM "=== COPYING ADDITIONAL FILES ==="
 REN dist\main.exe ERSoundbankHelper.exe
 COPY LICENSE dist\
 COPY README.md dist\
+ROBOCOPY empty_soundbank dist\empty_soundbank /E

@@ -357,7 +357,7 @@ class SoundbankHelperGui(tk.Tk):
         check_frame.pack(fill=tk.X)
 
         self.enable_write_var = tk.BooleanVar(value=True)
-        self.no_questions_var = tk.BooleanVar(value=False)
+        self.no_questions_var = tk.BooleanVar(value=True)
         self.widgets["write_to_dest_check"] = ttk.Checkbutton(
             check_frame, variable=self.enable_write_var
         )
