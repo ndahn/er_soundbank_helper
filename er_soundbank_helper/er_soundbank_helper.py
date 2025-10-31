@@ -164,6 +164,19 @@ def get_parent_id(node: dict) -> int:
     return body["node_base_params"]["direct_parent_id"]
 
 
+def get_path(node: dict, path: str) -> Any:
+    if "body" in node:
+        node = get_body(node)
+
+    val = node
+    for part in path.split("/"):
+        val = val.get(part)
+        if val is None:
+            return None
+
+    return val
+
+
 def get_user_reply(query: str, valid: str | list) -> str:
     if isinstance(valid, list):
         valid = "".join(s[0] for s in valid)
@@ -309,7 +322,6 @@ def transfer_wwise_main(
                 print(f" ⤷ {key} ({node_type})")
 
             # Where to insert the objects in the destination soundbank
-            obj_transfer_idx = -1
             up_child_id = entrypoint_id
 
             # Go upwards through the parents chain and see what needs to be transferred
@@ -317,7 +329,6 @@ def transfer_wwise_main(
                 if up_id in dst_bnk.idmap:
                     # Once we encounter an existing node we can assume the rest of the chain is
                     # intact. Child nodes must be inserted *before* the first existing parent.
-                    obj_transfer_idx = dst_bnk.idmap[up_id]
                     add_children(dst_bnk.hirc[dst_bnk.idmap[up_id]], up_child_id)
                     break
 
@@ -346,39 +357,19 @@ def transfer_wwise_main(
                     print(f" - {node_id} ({get_node_type(node)})")
                 print()
 
-            # No part of the hierarchy exists in the destination soundbank yet, place everything
-            # after the first RandomSequenceContainer we find
-            if obj_transfer_idx < 0:
-                for idx, obj in enumerate(dst_bnk.hirc):
-                    obj_type = get_node_type(obj)
-                    if obj_type == "RandomSequenceContainer":
-                        obj_transfer_idx = idx + 1
-                        break
-
             # Transfer the objects
             transferred_objects = transfer_objects(
                 src_bnk,
                 dst_bnk,
                 transfer_object_indices,
-                obj_transfer_idx,
                 no_questions=no_questions,
             )
             transferred_indices.extend(transferred_objects)
-
-            # Now we write the play and stop events into the event section
-            evt_transfer_idx = -1
-            for evt_idx in dst_bnk.idmap.values():
-                evt = dst_bnk.hirc[evt_idx]
-                evt_id = str(get_id(evt))
-                if evt_id.startswith("Play_c"):
-                    evt_transfer_idx = evt_idx + 1
-                    break
 
             transferred_events = transfer_events(
                 src_bnk,
                 dst_bnk,
                 transfer_event_indices,
-                evt_transfer_idx,
                 wwise_src,
                 wwise_dst,
                 no_questions=no_questions,
@@ -554,18 +545,43 @@ def collect_extras(bnk: Soundbank, transfer_object_indices: list[int]):
     return extras
 
 
+def get_insertion_index(
+    src_bnk: Soundbank,
+    dst_bnk: Soundbank,
+    object_indices: list[int],
+) -> int:
+    min_idx = 0
+    max_idx = len(dst_bnk.hirc)
+
+    for obj_idx in object_indices:
+        obj = src_bnk.hirc[obj_idx]
+
+        try:
+            parent = get_parent_id(obj)
+            parent_idx = dst_bnk.idmap.get(parent, len(dst_bnk.hirc)) - 1
+            max_idx = min(parent_idx, max_idx)
+        except KeyError:
+            pass
+
+        children: list = get_path(obj, "children/items") or []
+        for child_id in children:
+            child_idx = dst_bnk.idmap.get(child_id, -1)
+            min_idx = max(child_idx, min_idx) + 1
+
+    if min_idx > max_idx:
+        print(f"Warning: requested impossible insertion index {min_idx} <= x < {max_idx}")
+
+    return min(min_idx, max_idx)
+
+
 def transfer_objects(
     src_bnk: Soundbank,
     dst_bnk: Soundbank,
     transfer_object_indices: list[int],
-    obj_transfer_idx: int,
     no_questions: bool = False,
 ):
     transferred_indices = []
-
-    # The first node of the HIRC is special and needs to be protected
-    if obj_transfer_idx == 0:
-        obj_transfer_idx += 1
+    dst_idx = get_insertion_index(src_bnk, dst_bnk, transfer_object_indices)
 
     for idx in transfer_object_indices:
         obj = src_bnk.hirc[idx]
@@ -596,16 +612,17 @@ def transfer_objects(
                 dst_bnk.hirc[dst_idx] = obj
                 continue
 
-        dst_bnk.hirc.insert(obj_transfer_idx, obj)
-        transferred_indices.append(obj_transfer_idx)
+        dst_bnk.hirc.insert(dst_idx, obj)
 
         # Since we have inserted something, all subsequent indices will be offset
         for oid, idx in dst_bnk.idmap.items():
-            if idx >= obj_transfer_idx:
+            if idx >= dst_idx:
                 dst_bnk.idmap[oid] = idx + 1
 
-        dst_bnk.idmap[obj_id] = obj_transfer_idx
-        obj_transfer_idx += 1
+        dst_bnk.idmap[obj_id] = dst_idx
+        transferred_indices.append(dst_idx)
+
+        dst_idx += 1
 
     return transferred_indices
 
@@ -614,16 +631,12 @@ def transfer_events(
     src_bnk: Soundbank,
     dst_bnk: Soundbank,
     transfer_event_indices: list[int],
-    evt_transfer_idx: int,
     src_wwise_id: str,
     dst_wwise_id: str,
     no_questions: bool = False,
 ):
     transferred_indices = []
-
-    # The first node of the HIRC is special and needs to be protected
-    if evt_transfer_idx == 0:
-        evt_transfer_idx = 1
+    evt_transfer_idx = len(dst_bnk.hirc)
 
     wwise_map = {
         f"Play_{src_wwise_id}": f"Play_{dst_wwise_id}",
@@ -708,33 +721,25 @@ def transfer_extras(
 ):
     transferred_indices = []
 
-    for id in extra_ids:
-        if id not in src_bnk.idmap:
+    for obj_id in extra_ids:
+        if obj_id not in src_bnk.idmap:
             continue
 
-        if id in dst_bnk.idmap:
+        if obj_id in dst_bnk.idmap:
             continue
 
-        idx = src_bnk.idmap[id]
-        extra = src_bnk.hirc[idx]
-        extra_type = get_node_type(extra)
+        obj_idx = src_bnk.idmap[obj_id]
+        obj = src_bnk.hirc[obj_idx]
+        dst_idx = get_insertion_index(src_bnk, dst_bnk, [obj_idx])
+        dst_bnk.hirc.insert(dst_idx, obj)
 
-        # Find the first object of the same type and insert the extra before that
-        for insert_idx, node in enumerate(dst_bnk.hirc):
-            if get_node_type(node) == extra_type:
-                # The first node of the HIRC is special and needs to be protected
-                if insert_idx == 0 or get_id(node) == 11895:
-                    insert_idx += 1
+        # Since we have inserted something, all subsequent indices will be offset
+        for obj_id, idx in dst_bnk.idmap.items():
+            if idx >= dst_idx:
+                dst_bnk.idmap[obj_id] = idx + 1
 
-                dst_bnk.hirc.insert(insert_idx, extra)
-                transferred_indices.append(idx)
-
-                for eid, idx in dst_bnk.idmap.items():
-                    if idx >= insert_idx:
-                        dst_bnk.idmap[eid] = idx + 1
-
-                dst_bnk.idmap[id] = insert_idx
-                break
+        dst_bnk.idmap[obj_id] = dst_idx
+        transferred_indices.append(dst_idx)
 
     return transferred_indices
 
