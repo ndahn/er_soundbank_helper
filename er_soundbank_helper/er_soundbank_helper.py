@@ -287,13 +287,19 @@ def transfer_wwise_main(
             if entrypoint_id in transfer_object_indices:
                 continue
 
+            if entrypoint_id not in src_bnk.idmap:
+                print(
+                    f"WARNING: action {action_hash} references external action {entrypoint_id}, skipping children"
+                )
+                continue
+
             entrypoint_idx = src_bnk.idmap[entrypoint_id]
 
             if "Event" in src_bnk.hirc[entrypoint_idx]["body"]:
                 # Action references another event, let's assume ER doesn't go too crazy here
                 if entrypoint_idx not in transfer_event_indices:
                     raise RuntimeError(
-                        f"Event {entrypoint_id} is referencing another event, but I don't know how to handle this (yet)!"
+                        f"Event {entrypoint_id} is referencing another event, what even is this???"
                     )
                 continue
 
@@ -569,7 +575,9 @@ def get_insertion_index(
             min_idx = max(child_idx, min_idx) + 1
 
     if min_idx > max_idx:
-        print(f"Warning: requested impossible insertion index {min_idx} <= x < {max_idx}")
+        print(
+            f"Warning: requested impossible insertion index {min_idx} <= x < {max_idx}"
+        )
 
     return min(min_idx, max_idx)
 
