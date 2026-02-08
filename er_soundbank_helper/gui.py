@@ -164,7 +164,7 @@ class IdSelectionDialog(tk.Toplevel):
         self.lang = lang
         
         self.title(translate("select_ids_dialog_title", self.lang))
-        self.geometry("400x500")
+        self.geometry("500x600")
         self.transient(parent)  # Set to be on top of parent
         
         # Create UI
@@ -191,6 +191,15 @@ class IdSelectionDialog(tk.Toplevel):
         label = ttk.Label(label_row, text=translate("available_ids_label", self.lang))
         label.pack(anchor=tk.W, pady=(0, 5))
         
+        # Search Frame
+        search_frame = ttk.Frame(main_frame)
+        search_frame.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(search_frame, text="Filter:").pack(side=tk.LEFT)
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.search_entry.bind('<KeyRelease>', self._filter_list)
+        
         # Listbox with scrollbar
         list_container = tk.Frame(main_frame)
         list_container.pack(fill=tk.BOTH, expand=True)
@@ -201,7 +210,8 @@ class IdSelectionDialog(tk.Toplevel):
         self.id_listbox = tk.Listbox(
             list_container, 
             selectmode=tk.EXTENDED, 
-            yscrollcommand=scrollbar.set
+            yscrollcommand=scrollbar.set,
+            font=("Consolas", 9) # 使用等宽字体方便对齐
         )
         self.id_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.id_listbox.yview)
@@ -216,26 +226,45 @@ class IdSelectionDialog(tk.Toplevel):
             command=self._add_selected_ids
         )
         add_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Store full list for filtering
+        self.all_items = []
         
     def _populate_id_list(self) -> None:
-        """Load soundbank and populate ID list"""
+        """Load soundbank and populate ID list with Hashes"""
         self.id_listbox.delete(0, tk.END)
         self.id_listbox.insert(tk.END, translate("loading_ids", self.lang))
         
         def load_in_thread():
             try:
                 soundbank: Soundbank = load_soundbank(Path(self.src_bank_path).parent)
-                # Filter event IDs that start with "Play_"
-                play_event_ids = sorted(
-                    [
-                        key[5:]
-                        for key in soundbank.idmap.keys()
-                        if isinstance(key, str) and key.startswith("Play_")
-                    ]
-                )
+                items = []
+                unknowns = []
+                
+                # Store the events and hashes in the search list
+                for key, idx in soundbank.idmap.items():
+                    if isinstance(key, str) and key.startswith("Play_"):
+                        hash_val = calc_hash_fnv1_32(key)
+                        items.append(f"{key} ({hash_val})")
+                    
+                    elif isinstance(key, int):
+                        # NOTE we could add events for which we don't know their names, 
+                        # but we're not setup for adding items by their hash instead of name yet
+                        # obj = soundbank.hirc[idx]
+                        # if get_node_type(obj) == "Event":
+                        #     hash_val = get_id(obj)
+                        #     unknowns.append(f"<Unknown_Event> ({key})")
+                        pass
+
+                items.sort()
+                unknowns.sort()
+                display_items = items + unknowns
+                
                 # Update UI in main thread
-                self.after(0, self._update_listbox, play_event_ids)
+                self.after(0, self._update_listbox, display_items)
+                
             except Exception as e:
+                traceback.print_exc()
                 self.after(
                     0,
                     lambda exc=e: messagebox.showerror(
@@ -246,24 +275,44 @@ class IdSelectionDialog(tk.Toplevel):
         
         threading.Thread(target=load_in_thread, daemon=True).start()
         
-    def _update_listbox(self, ids: list) -> None:
+    def _update_listbox(self, items: list) -> None:
         """Helper function to update Listbox in main thread"""
+        self.all_items = items  # Store for filtering
         self.id_listbox.delete(0, tk.END)
-        for sound_id in ids:
-            self.id_listbox.insert(tk.END, sound_id)
+        for item in items:
+            self.id_listbox.insert(tk.END, item)
+
+    def _filter_list(self, event=None):
+        """Filter list based on search box"""
+        search_term = self.search_var.get().lower()
+        self.id_listbox.delete(0, tk.END)
+        
+        for item in self.all_items:
+            if search_term in item.lower():
+                self.id_listbox.insert(tk.END, item)
             
     def _add_selected_ids(self) -> None:
         """Add selected IDs to main window text boxes"""
         selected_indices = self.id_listbox.curselection()
         
         for i in selected_indices:
-            src_id = self.id_listbox.get(i)
+            item_text = self.id_listbox.get(i)
+            src_id_full = item_text.rsplit(" ", maxsplit=1)[0]
             
-            # Auto-generate destination ID (simple replacement of 'c' with 's')
+            if src_id_full.startswith("Play_"):
+                src_id = src_id_full[5:]
+            else:
+                src_id = src_id_full
+
+            # TODO filter out <Unknown>, remove once we can transfer sounds by hash
+            if src_id.startswith("<"):
+                continue
+            
+            # Translate c to s - should maybe be left to the user?
             if src_id.startswith("c"):
                 dst_id = "s" + src_id[1:]
             else:
-                dst_id = src_id  # Keep original if doesn't start with 'c'
+                dst_id = src_id  
             
             self.parent.src_wwise_ids.insert(tk.END, f"{src_id}\n")
             self.parent.dst_wwise_ids.insert(tk.END, f"{dst_id}\n")

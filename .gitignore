@@ -5,3 +5,4 @@ dist/
 main.spec
 *.pyc
 .vscode
+tmp/

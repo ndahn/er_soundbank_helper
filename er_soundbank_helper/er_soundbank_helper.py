@@ -478,9 +478,13 @@ def collect_action_chain(bnk: Soundbank, entrypoint_id: int):
 
 def collect_parent_chain(bnk: Soundbank, entrypoint_id: int) -> deque:
     entrypoint = bnk.hirc[bnk.idmap[entrypoint_id]]
-    parent_id = get_parent_id(entrypoint)
-
     upchain = deque()
+
+    try:
+        parent_id = get_parent_id(entrypoint)
+    except Exception:
+        # Some types like buses don't have a direct_parent_id
+        return upchain
 
     while parent_id != 0 and parent_id in bnk.idmap:
         # No early exit, we want to recover the entire upwards chain. We'll handle the
