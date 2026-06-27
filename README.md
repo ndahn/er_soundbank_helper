@@ -1,3 +1,8 @@
+> [!NOTE]
+> This tool has been succeeded by (Yonder)[https://github.com/ndahn/yonder]
+
+---
+
 A nifty little tool I wrote for transfering sounds between Elden Ring soundbanks. 
 
 This tool was written for Wwise soundbanks, where every sound is not just a simple media file, but is controlled by a graph of wwise objects which define how it's played, randomized, sequenced, which busses to use, volume, and a myriad other things. This tool will transfer all of that from one soundbank to another.
