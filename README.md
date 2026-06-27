@@ -1,5 +1,5 @@
 > [!NOTE]
-> This tool has been succeeded by (Yonder)[https://github.com/ndahn/yonder]
+> This tool has been succeeded by [Yonder](https://github.com/ndahn/yonder) and is no longer under development.
 
 ---
 
